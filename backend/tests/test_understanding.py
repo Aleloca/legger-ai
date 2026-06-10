@@ -13,6 +13,7 @@ import pytest
 
 from legger.chat.understanding import (
     ANALYZE_QUERY_TOOL,
+    HISTORY_CHAR_LIMIT,
     HISTORY_TURNS,
     MODEL_HAIKU,
     QueryAnalysis,
@@ -164,10 +165,12 @@ def test_request_forces_the_analyze_query_tool() -> None:
     assert call["temperature"] == 0.0
 
 
-def test_short_timeout_and_bounded_retries() -> None:
+def test_short_timeout_and_zero_retries() -> None:
+    # max_retries=0: worst case is one attempt (~10s); the fallback is cheap,
+    # so a retry would only double the latency budget on the chat hot path.
     fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
     understand_query(messages_one_turn(), anthropic_client=fake)
-    assert fake.option_calls == [{"timeout": 10.0, "max_retries": 1}]
+    assert fake.option_calls == [{"timeout": 10.0, "max_retries": 0}]
 
 
 def test_system_prompt_is_analysis_only() -> None:
@@ -207,8 +210,61 @@ def test_single_turn_conversation_has_empty_history() -> None:
     fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
     understand_query(messages_one_turn("solo questa"), anthropic_client=fake)
     prompt = fake.calls[0]["messages"][0]["content"]
-    assert "(nessuno)" in prompt
-    assert prompt.rstrip().endswith("solo questa")
+    assert "<storico>\n(nessuno)\n</storico>" in prompt
+    assert "<messaggio_corrente>\nsolo questa\n</messaggio_corrente>" in prompt
+
+
+def test_history_and_current_message_are_tagged() -> None:
+    # Distinct XML-ish delimiters keep message text from spoofing the framing.
+    fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
+    understand_query(
+        [
+            {"role": "user", "content": "prima domanda"},
+            {"role": "assistant", "content": "prima risposta"},
+            {"role": "user", "content": "domanda corrente"},
+        ],
+        anthropic_client=fake,
+    )
+    prompt = fake.calls[0]["messages"][0]["content"]
+    storico = prompt.split("<storico>\n")[1].split("\n</storico>")[0]
+    corrente = prompt.split("<messaggio_corrente>\n")[1].split("\n</messaggio_corrente>")[0]
+    assert storico == "utente: prima domanda\nassistente: prima risposta"
+    assert corrente == "domanda corrente"
+
+
+def test_history_messages_clamped_to_char_limit() -> None:
+    # Each history message is cut at HISTORY_CHAR_LIMIT chars: a deterministic
+    # bound on prompt size (cost/latency). The current message is not clamped.
+    fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
+    long_history = "h" * (HISTORY_CHAR_LIMIT + 500)
+    current = "c" * (HISTORY_CHAR_LIMIT + 500)
+    understand_query(
+        [
+            {"role": "user", "content": long_history},
+            {"role": "assistant", "content": "ok"},
+            {"role": "user", "content": current},
+        ],
+        anthropic_client=fake,
+    )
+    prompt = fake.calls[0]["messages"][0]["content"]
+    assert "h" * HISTORY_CHAR_LIMIT in prompt
+    assert "h" * (HISTORY_CHAR_LIMIT + 1) not in prompt
+    assert current in prompt
+
+
+def test_non_string_content_does_not_break_the_fallback() -> None:
+    # Issue: content may be a list of blocks (Anthropic-style); the fallback
+    # (and the prompt assembly) must coerce via str() instead of raising.
+    fake = FakeAnthropic(exc=RuntimeError("API down"))
+    content = [{"type": "text", "text": "domanda"}]
+    analysis = understand_query([{"role": "user", "content": content}], anthropic_client=fake)
+    assert analysis == QueryAnalysis(rewritten_query=str(content))
+
+
+def test_tool_schema_mirrors_query_analysis_fields() -> None:
+    # Guard against schema drift: every QueryAnalysis field must exist in the
+    # forced-tool schema and vice versa.
+    assert set(ANALYZE_QUERY_TOOL["input_schema"]["properties"]) == set(QueryAnalysis.model_fields)
 
 
 def test_model_haiku_constant() -> None:
