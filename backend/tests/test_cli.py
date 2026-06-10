@@ -16,9 +16,42 @@ def test_help_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.code == 0
 
 
-@pytest.mark.parametrize("command", ["ingest", "eval", "chat"])
+@pytest.mark.parametrize("command", ["ingest", "chat"])
 def test_stub_commands_exit_nonzero(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     monkeypatch.setattr("sys.argv", ["legger", command])
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
     assert exc_info.value.code == 1
+
+
+def test_eval_requires_collection_and_embedder(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["legger", "eval"])
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+    assert exc_info.value.code == 2  # argparse: missing required arguments
+
+
+def test_eval_invokes_run_eval(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    import legger.eval_retrieval as eval_mod
+
+    calls: list[tuple] = []
+
+    def fake_run_eval(collection: str, embedder: str, *, k: int):
+        calls.append((collection, embedder, k))
+        report = eval_mod.evaluate(
+            [], lambda q: [], collection=collection, embedder_name=embedder, k=k, vigenza="vigente"
+        )
+        return report, "eval/results/fake.json"
+
+    monkeypatch.setattr(eval_mod, "run_eval", fake_run_eval)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["legger", "eval", "--collection", "norme_test", "--embedder", "voyage-law-2", "--k", "5"],
+    )
+    cli.main()
+    assert calls == [("norme_test", "voyage-law-2", 5)]
+    out = capsys.readouterr().out
+    assert "collection=norme_test" in out
+    assert "JSON report: eval/results/fake.json" in out

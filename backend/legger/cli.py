@@ -35,8 +35,20 @@ def main() -> None:
         help="Force full re-embedding (default: skip lots already in Qdrant)",
     )
 
+    evalp = subparsers.add_parser("eval", help="Run the retrieval eval (queries.yaml)")
+    evalp.add_argument(
+        "--collection",
+        required=True,
+        help='Qdrant collection to query (e.g. "norme_voyagelaw2")',
+    )
+    evalp.add_argument(
+        "--embedder",
+        required=True,
+        help='Dense embedder matching the collection: "bge-m3" or a "voyage-*" model id',
+    )
+    evalp.add_argument("--k", type=int, default=10, help="Hits retrieved per query (default 10)")
+
     subparsers.add_parser("ingest", help="Ingest the corpus (not implemented yet)")
-    subparsers.add_parser("eval", help="Run retrieval evaluation (not implemented yet)")
     subparsers.add_parser("chat", help="Start an interactive chat (not implemented yet)")
 
     args = parser.parse_args()
@@ -47,6 +59,10 @@ def main() -> None:
 
     if args.command == "index":
         _run_index(args)
+        return
+
+    if args.command == "eval":
+        _run_eval(args)
         return
 
     print(f"'{args.command}' is not implemented yet.")
@@ -79,6 +95,14 @@ def _run_index(args: argparse.Namespace) -> None:
         for rel_path, error in report.file_errors:
             print(f"  - {rel_path}: {error}")
         raise SystemExit(2)
+
+
+def _run_eval(args: argparse.Namespace) -> None:
+    from legger.eval_retrieval import format_report, run_eval
+
+    report, json_path = run_eval(args.collection, args.embedder, k=args.k)
+    print(format_report(report))
+    print(f"\nJSON report: {json_path}")
 
 
 if __name__ == "__main__":
