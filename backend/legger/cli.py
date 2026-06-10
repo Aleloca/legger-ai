@@ -18,6 +18,7 @@ def main() -> None:
         return
 
     print(f"'{args.command}' is not implemented yet.")
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":
