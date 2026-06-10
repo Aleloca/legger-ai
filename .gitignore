@@ -17,6 +17,9 @@ __pycache__/
 # Python virtual environments
 .venv/
 
+# Local environment files
+.env
+
 # Python tool caches
 .pytest_cache/
 .ruff_cache/
