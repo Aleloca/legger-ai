@@ -1,11 +1,34 @@
 """Command-line interface for legger."""
 
 import argparse
+import logging
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="legger", description="legger.ai CLI")
     subparsers = parser.add_subparsers(dest="command")
+
+    index = subparsers.add_parser("index", help="Index a corpus collection into Qdrant")
+    index.add_argument(
+        "--collection",
+        required=True,
+        help='Corpus collection folder to index (e.g. "Codici")',
+    )
+    index.add_argument(
+        "--embedder",
+        required=True,
+        help='Dense embedder: "bge-m3" or a "voyage-*" model id',
+    )
+    index.add_argument(
+        "--qdrant-collection-suffix",
+        default=None,
+        help="Optional suffix appended to the Qdrant collection name (experiments)",
+    )
+    index.add_argument(
+        "--recreate",
+        action="store_true",
+        help="Drop and recreate the Qdrant collection before indexing",
+    )
 
     subparsers.add_parser("ingest", help="Ingest the corpus (not implemented yet)")
     subparsers.add_parser("eval", help="Run retrieval evaluation (not implemented yet)")
@@ -17,8 +40,38 @@ def main() -> None:
         parser.print_help()
         return
 
+    if args.command == "index":
+        _run_index(args)
+        return
+
     print(f"'{args.command}' is not implemented yet.")
     raise SystemExit(1)
+
+
+def _run_index(args: argparse.Namespace) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    from legger.retrieval.index import index_collection
+
+    report = index_collection(
+        args.collection,
+        args.embedder,
+        suffix=args.qdrant_collection_suffix,
+        recreate=args.recreate,
+    )
+    print(
+        f"\nIndexed {report.chunks_indexed} chunks from "
+        f"{report.files_indexed}/{report.files_total} files into "
+        f"'{report.qdrant_collection}' in {report.elapsed_s:.0f}s."
+    )
+    if report.file_errors:
+        print(f"{len(report.file_errors)} file(s) failed:")
+        for rel_path, error in report.file_errors:
+            print(f"  - {rel_path}: {error}")
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":
