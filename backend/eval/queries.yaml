@@ -1,0 +1,251 @@
+# Retrieval eval query set (Task C1) -- 30 Italian legal queries over the
+# `Codici` collection (the Phase C index sample), used by the embedding
+# benchmark (C2-C4) and the C6 go/no-go gate (recall@10 >= 85%).
+#
+# Ground truth is EMPIRICAL: every expected (act_ref, article) pair was
+# verified against the real corpus (parse_act + derive_act_ref over the 40
+# files of italia-corpus/Codici, then a read of the article text to confirm
+# the semantic match). test_eval_queries.py re-checks existence on every run
+# with the corpus available (pytest -m corpus).
+#
+# act_ref conventions (from legger.corpus.refs, derived on the REAL files):
+# - well-known codici use their registry slug (codice-civile, codice-penale,
+#   codice-procedura-civile, codice-consumo, codice-privacy, ...);
+# - the Codice di procedura penale is GENERATIONAL (rd 1399/1930 vs dpr
+#   447/1988), so its act_ref is the carrier header: dpr-447-1988;
+# - codice della strada = dlgs-285-1992, norme ambientali = dlgs-152-2006,
+#   processo tributario = dlgs-546-1992 (header-derived, no registry slug).
+#
+# kinds: explicit (10) | natural (12) | lay (5) | trap (3).
+# Natural queries are phrased as a lawyer would ask a colleague (NOT the
+# article rubric, which would make dense retrieval trivially easy); lay
+# queries use zero legal jargon; traps document expected behavior in `note`.
+
+# --- explicit-reference lookups (10) ---------------------------------------
+
+- id: q01
+  query: "art. 2051 c.c."
+  expected: { act_ref: codice-civile, article: "2051" }
+  kind: explicit
+  note: "Danno cagionato da cosa in custodia. Abbreviazione standard c.c."
+
+- id: q02
+  query: "articolo 52 del codice penale"
+  expected: { act_ref: codice-penale, article: "52" }
+  kind: explicit
+  note: "Difesa legittima. Riferimento per esteso, senza abbreviazione."
+
+- id: q03
+  query: "art. 700 c.p.c."
+  expected: { act_ref: codice-procedura-civile, article: "700" }
+  kind: explicit
+  note: "Provvedimenti d'urgenza. Abbreviazione c.p.c."
+
+- id: q04
+  query: "art. 274 c.p.p."
+  expected: { act_ref: dpr-447-1988, article: "274" }
+  kind: explicit
+  note: >-
+    Esigenze cautelari. Il c.p.p. e' un codice generazionale: il suo act_ref
+    e' il carrier dpr-447-1988, non uno slug codice-procedura-penale.
+
+- id: q05
+  query: "articolo 186 del codice della strada"
+  expected: { act_ref: dlgs-285-1992, article: "186" }
+  kind: explicit
+  note: "Guida sotto l'influenza dell'alcool."
+
+- id: q06
+  query: "art. 1453 del codice civile"
+  expected: { act_ref: codice-civile, article: "1453" }
+  kind: explicit
+  note: "Risolubilita' del contratto per inadempimento."
+
+- id: q07
+  query: "art. 33 del codice del consumo"
+  expected: { act_ref: codice-consumo, article: "33" }
+  kind: explicit
+  note: "Clausole vessatorie nei contratti del consumatore."
+
+- id: q08
+  query: "articolo 167 del codice privacy"
+  expected: { act_ref: codice-privacy, article: "167" }
+  kind: explicit
+  note: "Trattamento illecito di dati (fattispecie penale del d.lgs. 196/2003)."
+
+- id: q09
+  query: "art. 256 del d.lgs. 152/2006"
+  expected: { act_ref: dlgs-152-2006, article: "256" }
+  kind: explicit
+  note: >-
+    Attivita' di gestione di rifiuti non autorizzata. Riferimento per estremi
+    (tipo/numero/anno) anziche' per nome del codice.
+
+- id: q10
+  query: "art. 20 del codice dell'amministrazione digitale"
+  expected: { act_ref: codice-amministrazione-digitale, article: "20" }
+  kind: explicit
+  note: "Validita' ed efficacia probatoria dei documenti informatici (CAD)."
+
+# --- natural-language questions (12) ----------------------------------------
+
+- id: q11
+  query: "entro quanto tempo si prescrive la richiesta di risarcimento per un fatto illecito?"
+  expected: { act_ref: codice-civile, article: "2947" }
+  kind: natural
+  note: >-
+    Art. 2947 c.c. (cinque anni; due per circolazione di veicoli). La rubrica
+    parla di "prescrizione del diritto al risarcimento del danno", la query no.
+
+- id: q12
+  query: >-
+    il creditore teme che il debitore disperda i propri beni prima della
+    sentenza: quale misura cautelare puo' chiedere?
+  expected: { act_ref: codice-procedura-civile, article: "671" }
+  kind: natural
+  note: >-
+    Sequestro conservativo. Anche l'art. 2905 c.c. (sequestro conservativo,
+    lato sostanziale) sarebbe difendibile: possibile doppio bersaglio per C4.
+
+- id: q13
+  query: "fino a quale limite di pena e' ammesso il patteggiamento?"
+  expected: { act_ref: dpr-447-1988, article: "444" }
+  kind: natural
+  note: >-
+    Applicazione della pena su richiesta delle parti. "Patteggiamento" e' il
+    nome colloquiale, assente dal testo normativo: test lessicale per il dense.
+
+- id: q14
+  query: "chi commette un reato per salvarsi da un pericolo grave e inevitabile e' punibile?"
+  expected: { act_ref: codice-penale, article: "54" }
+  kind: natural
+  note: "Stato di necessita'. Vicina semanticamente all'art. 52 (scriminanti)."
+
+- id: q15
+  query: >-
+    il giudice puo' diminuire la pena valutando circostanze a favore
+    dell'imputato diverse da quelle previste espressamente?
+  expected: { act_ref: codice-penale, article: "62-bis" }
+  kind: natural
+  note: "Circostanze attenuanti generiche. Numero con suffisso -bis."
+
+- id: q16
+  query: "entro quanti giorni il consumatore puo' recedere da un acquisto concluso fuori dai locali commerciali?"
+  expected: { act_ref: codice-consumo, article: "52" }
+  kind: natural
+  note: "Diritto di recesso, quattordici giorni (contratti a distanza e fuori sede)."
+
+- id: q17
+  query: "quali poteri e funzioni ha il Garante per la protezione dei dati personali?"
+  expected: { act_ref: codice-privacy, article: "154" }
+  kind: natural
+  note: "Compiti del Garante. La rubrica e' il solo laconico '(Compiti)'."
+
+- id: q18
+  query: "cosa rischia chi si mette al volante dopo aver fatto uso di droghe?"
+  expected: { act_ref: dlgs-285-1992, article: "187" }
+  kind: natural
+  note: >-
+    Guida dopo l'assunzione di sostanze stupefacenti. Distrattore forte:
+    l'art. 186 (alcool) e' contiguo e semanticamente affine.
+
+- id: q19
+  query: >-
+    un imprenditore in squilibrio patrimoniale vuole farsi affiancare da un
+    esperto indipendente per trattare con i creditori: quale strumento prevede
+    il codice della crisi?
+  expected: { act_ref: codice-crisi-impresa, article: "12" }
+  kind: natural
+  note: "Composizione negoziata della crisi (nomina dell'esperto)."
+
+- id: q20
+  query: "quali acquisti compiuti dai coniugi durante il matrimonio rientrano nella comunione legale?"
+  expected: { act_ref: codice-civile, article: "177" }
+  kind: natural
+  note: "Oggetto della comunione. La rubrica nel corpus e' dentro i marker ((...))."
+
+- id: q21
+  query: "il datore di lavoro risponde dei danni causati a terzi dal proprio dipendente durante il lavoro?"
+  expected: { act_ref: codice-civile, article: "2049" }
+  kind: natural
+  note: >-
+    Responsabilita' dei padroni e dei committenti: il testo parla di
+    "domestici e commessi", lessico ottocentesco lontanissimo dalla query.
+
+- id: q22
+  query: "entro quale termine si impugna una cartella di pagamento davanti al giudice tributario?"
+  expected: { act_ref: dlgs-546-1992, article: "21" }
+  kind: natural
+  note: "Termine per la proposizione del ricorso (60 giorni), processo tributario."
+
+# --- lay / citizen phrasing (5) ---------------------------------------------
+
+- id: q23
+  query: "il mio vicino vuole costruire vicino al confine del mio terreno, a che distanza deve stare?"
+  expected: { act_ref: codice-civile, article: "873" }
+  kind: lay
+  note: >-
+    Distanze nelle costruzioni (tre metri). Gli artt. 874-877 (comunione del
+    muro, costruzioni in aderenza) sono arguably pertinenti: nota per C4.
+
+- id: q24
+  query: "il cane del vicino mi ha morso, chi mi paga i danni?"
+  expected: { act_ref: codice-civile, article: "2052" }
+  kind: lay
+  note: "Danno cagionato da animali. Zero lessico giuridico nella query."
+
+- id: q25
+  query: "ho comprato un telefono e si e' rotto dopo due mesi: me lo devono riparare o sostituire gratis?"
+  expected: { act_ref: codice-consumo, article: "135-bis" }
+  kind: lay
+  note: >-
+    Rimedi per difetto di conformita' (riparazione/sostituzione), testo
+    post-riforma d.lgs. 170/2021. L'art. 135-ter (modalita' del ripristino)
+    e' un secondo bersaglio plausibile.
+
+- id: q26
+  query: "sono passato col semaforo rosso, cosa rischio?"
+  expected: { act_ref: dlgs-285-1992, article: "146" }
+  kind: lay
+  note: >-
+    Violazione della segnaletica stradale. L'art. 126-bis (patente a punti,
+    tabella decurtazioni) e' un bersaglio alternativo difendibile per C4.
+
+- id: q27
+  query: "i rami dell'albero del vicino sporgono nel mio giardino: posso farli tagliare?"
+  expected: { act_ref: codice-civile, article: "896" }
+  kind: lay
+  note: "Recisione di rami protesi e di radici."
+
+# --- traps (3) ---------------------------------------------------------------
+
+- id: q28
+  query: "ingiuria art. 594 codice penale"
+  expected: { act_ref: codice-penale, article: "594" }
+  kind: trap
+  note: >-
+    TRAPPOLA (articolo abrogato): l'ingiuria e' stata depenalizzata dal
+    d.lgs. 7/2016 e l'art. 594 sopravvive nel corpus solo come stub
+    "((ARTICOLO ABROGATO ...))" -- e' quello il chunk atteso: il sistema deve
+    trovarlo e riferire l'abrogazione, non inventare un testo. Non esiste un
+    successore penale; il vicino semantico superstite e' l'art. 595
+    (diffamazione).
+
+- id: q29
+  query: "oltraggio a pubblico ufficiale"
+  expected: { act_ref: codice-penale, article: "341-bis" }
+  kind: trap
+  note: >-
+    TRAPPOLA (numerazione storica): l'art. 341 c.p. storico e' uno stub
+    abrogato (l. 205/1999); la fattispecie vigente e' l'art. 341-bis
+    (reintrodotto dalla l. 94/2009). Atteso il -bis, non lo stub.
+
+- id: q30
+  query: "provvedimenti d'urgenza art. 770 c.p.c."
+  expected: { act_ref: codice-procedura-civile, article: "700" }
+  kind: trap
+  note: >-
+    TRAPPOLA (near-miss di numerazione): il 770 c.p.c. ESISTE ma riguarda
+    l'inventario eseguito dal notaio; i provvedimenti d'urgenza sono
+    l'art. 700. Il contenuto semantico deve vincere sul numero sbagliato
+    (o almeno: il 700 deve comparire nella top-10 accanto al 770).
