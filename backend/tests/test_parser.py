@@ -31,6 +31,7 @@ VINO = (
 CODICE_PENALE = (
     FIXTURES / "Codici" / "Approvazione del testo definitivo del Codice Penale. 030U1398.md"
 )
+CODICE_CIVILE = FIXTURES / "Codici" / "1942-04-04_042U0262_VIGENZA_2026-04-29_V0.md"
 REGIO_343 = FIXTURES / "Regi decreti" / "012U0343.md"
 BILANCIO = (
     FIXTURES
@@ -48,6 +49,7 @@ ALL_FIXTURES = [
     DUPLICE_USO,
     VINO,
     CODICE_PENALE,
+    CODICE_CIVILE,
     REGIO_343,
     BILANCIO,
     ANNULLAMENTO,
@@ -281,6 +283,85 @@ class TestBilancioCommi:
         seen = [key(c.number) for c in bilancio.articles[0].commi]
         for prev, cur in zip(seen, seen[1:]):
             assert cur[0] >= prev[0]
+
+
+# ---------------------------------------------------------------------------
+# A1 - base64 Akoma Ntoso HTML (Codice Civile, truncated after art. 2051)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def codice_civile() -> Act:
+    return parse_act(CODICE_CIVILE)
+
+
+class TestCodiceCivileAkn:
+    def test_header(self, codice_civile: Act) -> None:
+        assert codice_civile.title == "REGIO DECRETO 16 marzo 1942 n. 262"
+        assert codice_civile.subtitle == "Approvazione del testo del Codice civile. (042U0262)"
+
+    def test_article_count(self, codice_civile: Act) -> None:
+        # 2 decree articles (article-num-akn) + 31 preleggi + 2141 CC articles
+        # (attachment-name divs) = 2174.
+        assert len(codice_civile.articles) == 2174
+        assert sum(1 for a in codice_civile.articles if a.path == ["CODICE CIVILE"]) == 2141
+        assert (
+            sum(
+                1
+                for a in codice_civile.articles
+                if a.path == ["Disposizioni sulla legge in generale"]
+            )
+            == 31
+        )
+
+    def test_decree_articles(self, codice_civile: Act) -> None:
+        first = codice_civile.articles[0]
+        assert first.number == "1"
+        assert first.path == []
+        text = "\n".join(c.text for c in first.commi)
+        assert "E' approvato il testo del" in text
+        # The art_aggiornamento-akn block following the decree article stays in it.
+        assert "AGGIORNAMENTO (3)" in text
+
+    def test_preleggi_article_1(self, codice_civile: Act) -> None:
+        art = codice_civile.articles[2]
+        assert art.number == "1"
+        assert art.path == ["Disposizioni sulla legge in generale"]
+        assert art.heading == "Indicazione delle fonti"
+        assert "le leggi" in art.commi[0].text
+
+    def test_abrogated_article_marker_kept(self, codice_civile: Act) -> None:
+        art17 = next(
+            a
+            for a in codice_civile.articles
+            if a.path == ["Disposizioni sulla legge in generale"] and a.number == "17"
+        )
+        assert "((ARTICOLO ABROGATO DALLA" in "\n".join(c.text for c in art17.commi)
+
+    def test_art_2051_rubric(self, codice_civile: Act) -> None:
+        art = next(
+            a
+            for a in codice_civile.articles
+            if a.path == ["CODICE CIVILE"] and a.number == "2051"
+        )
+        assert art.heading == "Danno cagionato da cosa in custodia"
+        assert "caso fortuito" in art.commi[0].text
+
+    def test_truncation_boundary(self, codice_civile: Act) -> None:
+        assert codice_civile.articles[-1].number == "2051"
+        cc_numbers = [a.number for a in codice_civile.articles if a.path == ["CODICE CIVILE"]]
+        assert "2052" not in cc_numbers
+
+    def test_bis_suffix_normalized(self, codice_civile: Act) -> None:
+        cc_numbers = {a.number for a in codice_civile.articles if a.path == ["CODICE CIVILE"]}
+        assert "1117-bis" in cc_numbers
+        assert "1469-sexies" in cc_numbers
+
+    def test_slash_numbered_articles(self, codice_civile: Act) -> None:
+        # Historical adoption articles "CODICE CIVILE-art. 314/2".."314/28".
+        cc_numbers = {a.number for a in codice_civile.articles if a.path == ["CODICE CIVILE"]}
+        assert "314/2" in cc_numbers
+        assert "314/28" in cc_numbers
 
 
 # ---------------------------------------------------------------------------
