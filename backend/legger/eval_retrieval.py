@@ -22,6 +22,7 @@ import datetime as dt
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel
@@ -34,6 +35,10 @@ from legger.settings import Settings
 #: Query kinds in display order (matches queries.yaml).
 KINDS = ("explicit", "natural", "lay", "trap")
 
+#: The only legal query kinds — a typo in queries.yaml must fail at load time,
+#: not silently vanish from the per-kind breakdown (which iterates KINDS).
+QueryKind = Literal["explicit", "natural", "lay", "trap"]
+
 QUERIES_PATH = Path(__file__).resolve().parents[1] / "eval" / "queries.yaml"
 RESULTS_DIR = Path(__file__).resolve().parents[1] / "eval" / "results"
 
@@ -45,7 +50,7 @@ class EvalQuery(BaseModel):
 
     id: str
     query: str
-    kind: str
+    kind: QueryKind
     note: str = ""
     expected_act_ref: str
     expected_article: str

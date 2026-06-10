@@ -8,6 +8,9 @@ breakdown, the miss list rendering and the JSON report file.
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from legger.eval_retrieval import (
     QUERIES_PATH,
     EvalQuery,
@@ -213,6 +216,24 @@ def test_write_json_report(tmp_path: Path) -> None:
 
 
 # --- queries.yaml loading -----------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_kind", ["explcit", "natural ", "TRAP", ""])
+def test_unknown_kind_is_rejected_at_load(bad_kind: str) -> None:
+    """A typo'd kind must fail loudly, not silently vanish from the breakdown."""
+    with pytest.raises(ValidationError):
+        EvalQuery(
+            id="qx",
+            query="query qx",
+            kind=bad_kind,  # type: ignore[arg-type]
+            expected_act_ref="codice-civile",
+            expected_article="2051",
+        )
+
+
+@pytest.mark.parametrize("kind", ["explicit", "natural", "lay", "trap"])
+def test_all_known_kinds_are_accepted(kind: str) -> None:
+    assert make_query("qx", kind=kind).kind == kind
 
 
 def test_load_real_queries_yaml() -> None:

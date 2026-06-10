@@ -170,7 +170,13 @@ class IndexReport:
     file_errors: list[tuple[str, str]] = field(default_factory=list)  # (rel_path, error)
 
 
-def _get_sparse_model() -> SparseTextEmbedding:
+def make_bm25_model() -> SparseTextEmbedding:
+    """Construct the fastembed BM25 model (single factory for index + search).
+
+    Index time and query time MUST use the same model + language, or query
+    terms tokenize/stem differently from the indexed documents and the sparse
+    branch silently degrades — hence one shared factory.
+    """
     from fastembed import SparseTextEmbedding
 
     return SparseTextEmbedding(model_name=BM25_MODEL, language=BM25_LANGUAGE)
@@ -324,7 +330,7 @@ def index_collection(
         collection_name,
         chunks,
         embedder,
-        _get_sparse_model(),
+        make_bm25_model(),
         lot_size=lot_size,
         resume=resume,
     )

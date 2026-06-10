@@ -16,6 +16,10 @@ from legger.retrieval.search import SearchHit, hybrid_search
 
 DIM = 4
 
+# The real lazy-singleton getter, captured before the autouse fixture below
+# replaces the module attribute (the thread-safety test exercises the real one).
+REAL_GET_SPARSE_QUERY_MODEL = search_mod._get_sparse_query_model
+
 
 class FakeEmbedder:
     name = "fake"
@@ -156,3 +160,73 @@ def test_bm25_query_vector_uses_singleton_model(fake_sparse: FakeSparseModel) ->
     vec = search_mod.bm25_query_vector("oltraggio a pubblico ufficiale")
     assert isinstance(vec, models.SparseVector)
     assert vec.indices == [7, 42]
+
+
+@pytest.mark.parametrize("query", ["", "   ", "\n\t "])
+def test_empty_query_raises_value_error(query: str) -> None:
+    client = FakeQdrant()
+    with pytest.raises(ValueError, match="non-empty"):
+        hybrid_search(
+            query,
+            collection="norme_test",
+            embedder=FakeEmbedder(),
+            client=client,  # type: ignore[arg-type]
+        )
+    assert client.calls == []  # rejected before any Qdrant call
+
+
+class EmptySparseModel:
+    """Sparse model whose query_embed yields nothing (e.g. all-stopword query)."""
+
+    def query_embed(self, query: str):
+        yield from ()
+
+
+def test_bm25_query_vector_degrades_to_empty_sparse_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(search_mod, "_get_sparse_query_model", lambda: EmptySparseModel())
+    vec = search_mod.bm25_query_vector("di a da in con su per")
+    assert vec == models.SparseVector(indices=[], values=[])
+
+
+def test_no_sparse_embedding_still_searches_dense_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(search_mod, "_get_sparse_query_model", lambda: EmptySparseModel())
+    client, hits = run()
+    (call,) = client.calls
+    dense, sparse = call["prefetch"]
+    assert dense.query == [0.1, 0.2, 0.3, 0.4]  # dense branch untouched
+    assert sparse.query == models.SparseVector(indices=[], values=[])
+    assert len(hits) == 1
+
+
+def test_sparse_model_singleton_is_thread_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Concurrent first calls must construct the model exactly once."""
+    import threading
+    import time
+
+    monkeypatch.setattr(search_mod, "_sparse_query_model", None)
+    constructions = []
+    gate = threading.Barrier(8)
+
+    def slow_factory() -> FakeSparseModel:
+        constructions.append(1)
+        time.sleep(0.05)  # widen the race window: without the lock this multi-constructs
+        return FakeSparseModel()
+
+    monkeypatch.setattr(search_mod, "make_bm25_model", slow_factory)
+    results: list[object] = []
+
+    def worker() -> None:
+        gate.wait()
+        results.append(REAL_GET_SPARSE_QUERY_MODEL())
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(constructions) == 1
+    assert all(r is results[0] for r in results)

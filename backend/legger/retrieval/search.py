@@ -17,38 +17,50 @@ pure query -> hits mapping, no query understanding, no reranking here.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 from qdrant_client import QdrantClient, models
 
 from legger.retrieval.embedders import Embedder
-from legger.retrieval.index import BM25_LANGUAGE, BM25_MODEL, DENSE_VECTOR, SPARSE_VECTOR
+from legger.retrieval.index import DENSE_VECTOR, SPARSE_VECTOR, make_bm25_model
 
 if TYPE_CHECKING:
     from fastembed import SparseTextEmbedding
 
 _sparse_query_model: SparseTextEmbedding | None = None
+_sparse_query_model_lock = threading.Lock()
 
 
 def _get_sparse_query_model() -> SparseTextEmbedding:
-    """Lazy singleton for the BM25 query embedder.
+    """Lazy singleton for the BM25 query embedder (thread-safe).
 
     Must be the exact fastembed model + language used at index time
-    (:mod:`legger.retrieval.index`), or query terms tokenize/stem differently
-    from the indexed documents and the sparse branch silently degrades.
+    (:func:`legger.retrieval.index.make_bm25_model`), or query terms
+    tokenize/stem differently from the indexed documents and the sparse branch
+    silently degrades. Double-checked locking: concurrent FastAPI requests
+    must not race the (slow, stateful) model load.
     """
     global _sparse_query_model
     if _sparse_query_model is None:
-        from fastembed import SparseTextEmbedding
-
-        _sparse_query_model = SparseTextEmbedding(model_name=BM25_MODEL, language=BM25_LANGUAGE)
+        with _sparse_query_model_lock:
+            if _sparse_query_model is None:
+                _sparse_query_model = make_bm25_model()
     return _sparse_query_model
 
 
 def bm25_query_vector(query: str) -> models.SparseVector:
-    """Embed a query for the ``bm25`` sparse branch (IDF is applied server-side)."""
-    embedding = next(iter(_get_sparse_query_model().query_embed(query)))
+    """Embed a query for the ``bm25`` sparse branch (IDF is applied server-side).
+
+    Defensive on the fastembed side: if the model yields no embedding for the
+    query (e.g. only stopwords/punctuation after tokenization), return an
+    empty SparseVector — Qdrant accepts it and the sparse branch simply
+    contributes nothing, so the search degrades gracefully to dense-only.
+    """
+    embedding = next(iter(_get_sparse_query_model().query_embed(query)), None)
+    if embedding is None:
+        return models.SparseVector(indices=[], values=[])
     return models.SparseVector(
         indices=embedding.indices.tolist(),
         values=embedding.values.tolist(),
@@ -94,7 +106,19 @@ def hybrid_search(
     vigenza: str | None = "vigente",
     prefetch_k: int = 50,
 ) -> list[SearchHit]:
-    """Dense + BM25 hybrid search with RRF fusion; top-``k`` hits, best first."""
+    """Dense + BM25 hybrid search with RRF fusion; top-``k`` hits, best first.
+
+    ``k`` and ``prefetch_k`` are linked: the fused result can only draw from
+    the two prefetch pools, so at most ~``2 * prefetch_k`` distinct points are
+    available and asking for ``k`` beyond that returns no extra hits — keep
+    ``k <= ~2 * prefetch_k`` (in practice well below, since the branches
+    overlap).
+
+    Raises :class:`ValueError` on an empty/whitespace-only query — it is
+    meaningless for both the dense and the sparse branch.
+    """
+    if not query.strip():
+        raise ValueError("hybrid_search: query must be a non-empty string")
     query_filter = None
     if vigenza is not None:
         query_filter = models.Filter(
