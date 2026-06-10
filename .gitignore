@@ -12,6 +12,15 @@ dist/
 
 # Compiled Python bytecode
 *.py[cod]
+__pycache__/
+
+# Python virtual environments
+.venv/
+
+# Python tool caches
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 
 # Log files
 *.log
