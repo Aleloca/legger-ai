@@ -130,6 +130,41 @@ def test_voyage_batching_splits_at_128() -> None:
     assert all(call["model"] == "voyage-law-2" for call in fake.calls)
 
 
+def test_voyage_batching_splits_on_token_budget() -> None:
+    """Token-aware batching: flush before the estimated budget is exceeded.
+
+    Estimate is len(text) // 3; with 90-char texts (30 est. tokens each) and a
+    100-token budget, exactly 3 texts fit per request (90 <= 100 < 120).
+    """
+    embedder, fake = make_voyage(max_tokens_per_batch=100)
+    texts = [str(i) * 90 for i in range(7)]  # distinct texts, 30 est. tokens each
+
+    vectors = embedder.embed_documents(texts)
+    assert len(vectors) == 7
+    assert [call["texts"] for call in fake.calls] == [texts[0:3], texts[3:6], texts[6:7]]
+
+
+def test_voyage_single_text_over_budget_goes_alone() -> None:
+    """A text whose estimate alone exceeds the budget is sent in its own
+    request (Voyage truncates over-context inputs server-side)."""
+    embedder, fake = make_voyage(max_tokens_per_batch=100)
+    small_a, giant, small_b = "a" * 30, "g" * 600, "b" * 30  # 10, 200, 10 est. tokens
+
+    vectors = embedder.embed_documents([small_a, giant, small_b])
+    assert len(vectors) == 3
+    assert [call["texts"] for call in fake.calls] == [[small_a], [giant], [small_b]]
+
+
+def test_voyage_token_budget_defaults_per_model() -> None:
+    """Budgets follow the per-model API caps (with margin); unknown voyage
+    models fall back to the most conservative budget."""
+    assert make_voyage()[0].max_tokens_per_batch == 100_000  # voyage-law-2 (120K cap)
+    assert make_voyage(model="voyage-4-large")[0].max_tokens_per_batch == 100_000  # 120K cap
+    assert make_voyage(model="voyage-4")[0].max_tokens_per_batch == 280_000  # 320K cap
+    assert make_voyage(model="voyage-4-lite")[0].max_tokens_per_batch == 900_000  # 1M cap
+    assert make_voyage(model="voyage-new-unknown")[0].max_tokens_per_batch == 100_000
+
+
 def test_voyage_query_uses_query_input_type() -> None:
     embedder, fake = make_voyage()
     vector = embedder.embed_query("che cos'è un contratto?")

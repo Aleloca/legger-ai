@@ -26,7 +26,11 @@ inside the free tier); the full 300k+ chunk corpus ≈ 120M tokens ≈ $14 one-o
 at $0.12/M.
 
 API notes: ``input_type="query"|"document"`` is supported (the API prepends
-retrieval-specific prompts); max 1,000 texts per request. The voyageai SDK
+retrieval-specific prompts); max 1,000 texts per request AND a per-request
+total-token cap (docs.voyageai.com, checked 2026-06-10): 120K tokens for
+voyage-law-2/voyage-4-large, 320K for voyage-4, 1M for voyage-4-lite. Both
+constraints apply simultaneously, so batching must be token-aware (a 128-text
+batch of ~8000-char legal chunks blew the 120K cap mid-run). The voyageai SDK
 (0.4.0) retries natively via tenacity (exponential jitter, 1-16s) on rate
 limit / service unavailable / timeout errors, but ``max_retries`` defaults to
 0 — we enable it explicitly, so no custom backoff loop is needed.
@@ -57,6 +61,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from legger.settings import Settings
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import voyageai
 
 DEFAULT_VOYAGE_MODEL = "voyage-law-2"
@@ -68,6 +74,29 @@ _VOYAGE_DIMS = {
     "voyage-4-lite": 1024,
     "voyage-law-2": 1024,
 }
+
+#: Per-request token budgets, derived from the API caps (120K law-2/4-large,
+#: 320K voyage-4, 1M 4-lite) with margin: token counts are estimated locally
+#: (see :func:`_estimate_tokens`), so the budget stays well under the hard cap.
+_VOYAGE_TOKEN_BUDGETS = {
+    "voyage-4-large": 100_000,
+    "voyage-4": 280_000,
+    "voyage-4-lite": 900_000,
+    "voyage-law-2": 100_000,
+}
+#: Fallback for unknown voyage models: the most restrictive cap, with margin.
+_DEFAULT_TOKEN_BUDGET = 100_000
+
+
+def _estimate_tokens(text: str) -> int:
+    """Conservative local token estimate for batching (no API round-trips).
+
+    Italian legal text runs ~3.5-4 chars/token under Voyage's tokenizer, so
+    ``len // 3`` safely overestimates. The voyageai client does expose
+    ``count_tokens``, but calling it per text would cost an API round-trip
+    per chunk — not worth it for a batching heuristic.
+    """
+    return max(1, len(text) // 3)
 
 
 @runtime_checkable
@@ -158,6 +187,14 @@ class VoyageEmbedder:
     discards every batch within that call. Callers indexing large corpora
     must therefore embed in upsert-sized slices (so a failure loses only the
     current slice, and the run stays resumable by re-upserting that slice).
+
+    Batching is token-aware: a batch is flushed when it reaches
+    ``batch_size`` texts OR when adding the next text would exceed
+    ``max_tokens_per_batch`` (estimated locally, see :func:`_estimate_tokens`)
+    — the API enforces a per-request total-token cap on top of the text-count
+    cap. A single text whose estimate alone exceeds the budget is sent alone:
+    Voyage truncates over-context inputs server-side, so it cannot be split
+    here without changing the embedding semantics.
     """
 
     def __init__(
@@ -166,6 +203,7 @@ class VoyageEmbedder:
         *,
         api_key: str | None = None,
         batch_size: int = 128,
+        max_tokens_per_batch: int | None = None,
         max_retries: int = 5,
     ) -> None:
         key = api_key if api_key is not None else Settings().voyage_api_key
@@ -177,6 +215,11 @@ class VoyageEmbedder:
         self.name = model
         self.dim = _VOYAGE_DIMS.get(model, 1024)
         self.batch_size = batch_size
+        self.max_tokens_per_batch = (
+            max_tokens_per_batch
+            if max_tokens_per_batch is not None
+            else _VOYAGE_TOKEN_BUDGETS.get(model, _DEFAULT_TOKEN_BUDGET)
+        )
         self._api_key = key
         self._max_retries = max_retries
         self._client: voyageai.Client | None = None
@@ -188,11 +231,31 @@ class VoyageEmbedder:
             self._client = voyageai.Client(api_key=self._api_key, max_retries=self._max_retries)
         return self._client
 
+    def _batches(self, texts: list[str]) -> Iterator[list[str]]:
+        """Greedy split honoring both the text-count and the token budget.
+
+        An empty batch always accepts the next text, so a single over-budget
+        text goes out alone (see the class docstring on server-side truncation).
+        """
+        batch: list[str] = []
+        batch_tokens = 0
+        for text in texts:
+            tokens = _estimate_tokens(text)
+            if batch and (
+                len(batch) >= self.batch_size
+                or batch_tokens + tokens > self.max_tokens_per_batch
+            ):
+                yield batch
+                batch, batch_tokens = [], 0
+            batch.append(text)
+            batch_tokens += tokens
+        if batch:
+            yield batch
+
     def _embed(self, texts: list[str], input_type: str) -> list[list[float]]:
         client = self._get_client()
         vectors: list[list[float]] = []
-        for start in range(0, len(texts), self.batch_size):
-            batch = texts[start : start + self.batch_size]
+        for batch in self._batches(texts):
             result = client.embed(batch, model=self.name, input_type=input_type)
             vectors.extend(result.embeddings)
         return vectors
