@@ -5,7 +5,9 @@ The bge-m3 integration test is marked ``slow`` and excluded by default; run it
 with ``uv run pytest -m slow``.
 """
 
+import logging
 import math
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -47,10 +49,22 @@ class FakeVoyageClient:
         return Result()
 
 
-def make_voyage(**kwargs: Any) -> tuple[VoyageEmbedder, FakeVoyageClient]:
+def make_voyage(
+    token_counter: Callable[[list[str]], list[int]] | None = None,
+    **kwargs: Any,
+) -> tuple[VoyageEmbedder, FakeVoyageClient]:
+    """Build a VoyageEmbedder with a fake client and an injected token counter.
+
+    The counter replaces ``_count_tokens`` so unit tests never load the real
+    HF tokenizer (no network, no cache dependence). Default: 1 token per text,
+    which makes token budgets irrelevant unless a test injects its own.
+    """
     embedder = VoyageEmbedder(api_key="pa-test", **kwargs)
     fake = FakeVoyageClient()
     embedder._client = fake
+    if token_counter is None:
+        token_counter = lambda texts: [1] * len(texts)  # noqa: E731
+    embedder._count_tokens = token_counter  # type: ignore[method-assign]
     return embedder, fake
 
 
@@ -131,46 +145,105 @@ def test_voyage_batching_splits_at_128() -> None:
 
 
 def test_voyage_batching_splits_on_token_budget() -> None:
-    """Token-aware batching: flush before the estimated budget is exceeded.
+    """Token-aware packing flushes before the exact-count budget is exceeded,
+    and the counter runs exactly once per embed_documents call."""
+    counts = {"a": 40, "b": 40, "c": 30, "d": 80, "e": 10}
+    counter_calls: list[list[str]] = []
 
-    Estimate is len(text) // 3; with 90-char texts (30 est. tokens each) and a
-    100-token budget, exactly 3 texts fit per request (90 <= 100 < 120).
-    """
-    embedder, fake = make_voyage(max_tokens_per_batch=100)
-    texts = [str(i) * 90 for i in range(7)]  # distinct texts, 30 est. tokens each
+    def counter(texts: list[str]) -> list[int]:
+        counter_calls.append(texts)
+        return [counts[t] for t in texts]
+
+    embedder, fake = make_voyage(token_counter=counter, max_tokens_per_batch=100)
+    texts = ["a", "b", "c", "d", "e"]
 
     vectors = embedder.embed_documents(texts)
-    assert len(vectors) == 7
-    assert [call["texts"] for call in fake.calls] == [texts[0:3], texts[3:6], texts[6:7]]
+    assert len(vectors) == 5
+    # a+b=80 fits; +c would hit 110 > 100; c+d would hit 110 > 100; d+e=90 fits.
+    assert [call["texts"] for call in fake.calls] == [["a", "b"], ["c"], ["d", "e"]]
+    assert counter_calls == [texts]  # counted once, over the full input
 
 
 def test_voyage_single_text_over_budget_goes_alone() -> None:
-    """A text whose estimate alone exceeds the budget is sent in its own
+    """A text whose exact count alone exceeds the budget is sent in its own
     request (Voyage truncates over-context inputs server-side)."""
-    embedder, fake = make_voyage(max_tokens_per_batch=100)
-    small_a, giant, small_b = "a" * 30, "g" * 600, "b" * 30  # 10, 200, 10 est. tokens
+    counts = {"small_a": 10, "giant": 200, "small_b": 10}
+    embedder, fake = make_voyage(
+        token_counter=lambda texts: [counts[t] for t in texts],
+        max_tokens_per_batch=100,
+    )
 
-    vectors = embedder.embed_documents([small_a, giant, small_b])
+    vectors = embedder.embed_documents(["small_a", "giant", "small_b"])
     assert len(vectors) == 3
-    assert [call["texts"] for call in fake.calls] == [[small_a], [giant], [small_b]]
+    assert [call["texts"] for call in fake.calls] == [["small_a"], ["giant"], ["small_b"]]
+
+
+def test_voyage_fallback_estimate_when_tokenizer_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No tokenizer (offline/HF down) -> len//2 estimates, same packing logic."""
+    monkeypatch.setattr(VoyageEmbedder, "_get_tokenizer", lambda self: None)
+    embedder = VoyageEmbedder(api_key="pa-test", max_tokens_per_batch=100)
+    fake = FakeVoyageClient()
+    embedder._client = fake  # type: ignore[assignment]
+    texts = [str(i) * 90 for i in range(5)]  # 45 est. tokens each -> 2 per batch
+
+    vectors = embedder.embed_documents(texts)
+    assert len(vectors) == 5
+    assert [call["texts"] for call in fake.calls] == [texts[0:2], texts[2:4], texts[4:5]]
+
+
+def test_voyage_tokenizer_load_failure_warns_and_never_crashes(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A tokenizer load error (offline, HF down) logs a warning and falls back
+    to estimates; embed_documents still succeeds. The failure is remembered,
+    so the load is not retried on every call."""
+    import tokenizers
+
+    load_attempts: list[str] = []
+
+    def boom(identifier: str, **kwargs: Any) -> Any:
+        load_attempts.append(identifier)
+        raise OSError("HF Hub unreachable")
+
+    monkeypatch.setattr(tokenizers.Tokenizer, "from_pretrained", staticmethod(boom))
+    embedder = VoyageEmbedder(api_key="pa-test")
+    fake = FakeVoyageClient()
+    embedder._client = fake  # type: ignore[assignment]
+
+    with caplog.at_level(logging.WARNING, logger="legger.retrieval.embedders"):
+        vectors = embedder.embed_documents(["a" * 30, "b" * 30])
+        embedder.embed_documents(["c" * 30, "d" * 30])
+
+    assert len(vectors) == 2
+    assert "falling back" in caplog.text
+    assert load_attempts == ["voyageai/voyage-law-2"]  # not retried per call
 
 
 def test_voyage_token_budget_defaults_per_model() -> None:
-    """Budgets follow the per-model API caps (with margin); unknown voyage
-    models fall back to the most conservative budget."""
-    assert make_voyage()[0].max_tokens_per_batch == 100_000  # voyage-law-2 (120K cap)
-    assert make_voyage(model="voyage-4-large")[0].max_tokens_per_batch == 100_000  # 120K cap
-    assert make_voyage(model="voyage-4")[0].max_tokens_per_batch == 280_000  # 320K cap
-    assert make_voyage(model="voyage-4-lite")[0].max_tokens_per_batch == 900_000  # 1M cap
-    assert make_voyage(model="voyage-new-unknown")[0].max_tokens_per_batch == 100_000
+    """Budgets follow the per-model API caps with ~8% headroom (counts are
+    exact, headroom covers server-side drift); unknown voyage models fall
+    back to the most conservative budget."""
+    assert make_voyage()[0].max_tokens_per_batch == 110_000  # voyage-law-2 (120K cap)
+    assert make_voyage(model="voyage-4-large")[0].max_tokens_per_batch == 110_000  # 120K cap
+    assert make_voyage(model="voyage-4")[0].max_tokens_per_batch == 295_000  # 320K cap
+    assert make_voyage(model="voyage-4-lite")[0].max_tokens_per_batch == 920_000  # 1M cap
+    assert make_voyage(model="voyage-new-unknown")[0].max_tokens_per_batch == 110_000
 
 
 def test_voyage_query_uses_query_input_type() -> None:
-    embedder, fake = make_voyage()
+    # Plain embedder (no injected counter): the single-text shortcut must keep
+    # the query path tokenizer-free.
+    embedder = VoyageEmbedder(api_key="pa-test")
+    fake = FakeVoyageClient()
+    embedder._client = fake  # type: ignore[assignment]
+
     vector = embedder.embed_query("che cos'è un contratto?")
     assert len(vector) == embedder.dim
     assert len(fake.calls) == 1
     assert fake.calls[0]["input_type"] == "query"
+    assert embedder._tokenizer is None  # never loaded for a single text
 
 
 def test_voyage_custom_model_and_batch() -> None:

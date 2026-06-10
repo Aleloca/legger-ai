@@ -35,6 +35,19 @@ batch of ~8000-char legal chunks blew the 120K cap mid-run). The voyageai SDK
 limit / service unavailable / timeout errors, but ``max_retries`` defaults to
 0 — we enable it explicitly, so no custom backoff loop is needed.
 
+Token counting for batching is EXACT and LOCAL: the SDK's
+``Client.count_tokens`` (voyageai/_base.py, 0.4.0) loads the model's HF
+tokenizer via ``tokenizers.Tokenizer.from_pretrained("voyageai/<model>")`` and
+encodes locally — no API round-trip. We use the same tokenizer directly (the
+SDK method only returns a sum, we need per-text counts). First use downloads
+the tokenizer JSON from the HF Hub (then cached in ~/.cache/huggingface);
+counting is cheap afterwards (~0.25ms/text measured). The previous
+``len(text) // 3`` estimate UNDERESTIMATED Italian legal text — measured
+~2.26 chars/token on Codici chunks (numbers, punctuation, ``((...))``
+amendment markers) — and a batch hit 132,740 actual tokens vs the 120K cap.
+If the tokenizer cannot be loaded (offline, HF down), batching falls back to
+a conservative ``len(text) // 2`` estimate with a logged warning.
+
 Local model notes
 -----------------
 bge-m3 runs through FlagEmbedding (``BGEM3FlagModel``). On macOS x86_64 the
@@ -56,6 +69,7 @@ i.e. ~33 min for the 18.5k Codici chunks.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from legger.settings import Settings
@@ -64,6 +78,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import voyageai
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_VOYAGE_MODEL = "voyage-law-2"
 
@@ -76,27 +92,28 @@ _VOYAGE_DIMS = {
 }
 
 #: Per-request token budgets, derived from the API caps (120K law-2/4-large,
-#: 320K voyage-4, 1M 4-lite) with margin: token counts are estimated locally
-#: (see :func:`_estimate_tokens`), so the budget stays well under the hard cap.
+#: 320K voyage-4, 1M 4-lite) with ~8% headroom: counts are exact local
+#: tokenizations (see :meth:`VoyageEmbedder._count_tokens`), the headroom only
+#: covers any server-side counting drift (e.g. input_type prompt prepends).
 _VOYAGE_TOKEN_BUDGETS = {
-    "voyage-4-large": 100_000,
-    "voyage-4": 280_000,
-    "voyage-4-lite": 900_000,
-    "voyage-law-2": 100_000,
+    "voyage-4-large": 110_000,
+    "voyage-4": 295_000,
+    "voyage-4-lite": 920_000,
+    "voyage-law-2": 110_000,
 }
 #: Fallback for unknown voyage models: the most restrictive cap, with margin.
-_DEFAULT_TOKEN_BUDGET = 100_000
+_DEFAULT_TOKEN_BUDGET = 110_000
 
 
 def _estimate_tokens(text: str) -> int:
-    """Conservative local token estimate for batching (no API round-trips).
+    """Fallback token estimate, used only when the local tokenizer is
+    unavailable (offline, HF Hub down — see :meth:`VoyageEmbedder._count_tokens`).
 
-    Italian legal text runs ~3.5-4 chars/token under Voyage's tokenizer, so
-    ``len // 3`` safely overestimates. The voyageai client does expose
-    ``count_tokens``, but calling it per text would cost an API round-trip
-    per chunk — not worth it for a batching heuristic.
+    Italian legal text measured ~2.26 chars/token under Voyage's tokenizer
+    (the earlier ``len // 3`` heuristic underestimated and blew the API cap),
+    so ``len // 2`` overestimates and keeps batches safely under budget.
     """
-    return max(1, len(text) // 3)
+    return max(1, len(text) // 2)
 
 
 @runtime_checkable
@@ -190,11 +207,15 @@ class VoyageEmbedder:
 
     Batching is token-aware: a batch is flushed when it reaches
     ``batch_size`` texts OR when adding the next text would exceed
-    ``max_tokens_per_batch`` (estimated locally, see :func:`_estimate_tokens`)
-    — the API enforces a per-request total-token cap on top of the text-count
-    cap. A single text whose estimate alone exceeds the budget is sent alone:
-    Voyage truncates over-context inputs server-side, so it cannot be split
-    here without changing the embedding semantics.
+    ``max_tokens_per_batch`` — the API enforces a per-request total-token cap
+    on top of the text-count cap. Token counts are EXACT, computed locally
+    with the model's own HF tokenizer (the same one the SDK's
+    ``count_tokens`` uses), once per ``embed_documents`` call; if the
+    tokenizer cannot be loaded, batching degrades to the conservative
+    :func:`_estimate_tokens` with a logged warning, never crashing. A single
+    text whose count alone exceeds the budget is sent alone: Voyage truncates
+    over-context inputs server-side, so it cannot be split here without
+    changing the embedding semantics.
     """
 
     def __init__(
@@ -223,6 +244,8 @@ class VoyageEmbedder:
         self._api_key = key
         self._max_retries = max_retries
         self._client: voyageai.Client | None = None
+        self._tokenizer: Any = None
+        self._tokenizer_failed = False
 
     def _get_client(self) -> voyageai.Client:
         if self._client is None:
@@ -231,16 +254,56 @@ class VoyageEmbedder:
             self._client = voyageai.Client(api_key=self._api_key, max_retries=self._max_retries)
         return self._client
 
+    def _get_tokenizer(self) -> Any | None:
+        """Lazily load the model's HF tokenizer for exact local token counts.
+
+        Same source the voyageai SDK's ``count_tokens`` uses
+        (``voyageai/<model>`` on the HF Hub; downloaded once, then served from
+        the local HF cache). Returns ``None`` — permanently, per instance — if
+        loading fails (offline, HF down, unknown model), so batching can fall
+        back to an estimate instead of crashing an indexing run.
+        """
+        if self._tokenizer is None and not self._tokenizer_failed:
+            try:
+                from tokenizers import Tokenizer
+
+                tokenizer = Tokenizer.from_pretrained(f"voyageai/{self.name}")
+                tokenizer.no_truncation()
+                self._tokenizer = tokenizer
+            except Exception:
+                self._tokenizer_failed = True
+                logger.warning(
+                    "Could not load HF tokenizer voyageai/%s; falling back to "
+                    "len//2 token estimates for batch packing.",
+                    self.name,
+                    exc_info=True,
+                )
+        return self._tokenizer
+
+    def _count_tokens(self, texts: list[str]) -> list[int]:
+        """Exact per-text token counts via the local tokenizer; estimates on
+        fallback (see :meth:`_get_tokenizer`)."""
+        tokenizer = self._get_tokenizer()
+        if tokenizer is None:
+            return [_estimate_tokens(text) for text in texts]
+        return [len(encoding) for encoding in tokenizer.encode_batch(texts)]
+
     def _batches(self, texts: list[str]) -> Iterator[list[str]]:
         """Greedy split honoring both the text-count and the token budget.
 
-        An empty batch always accepts the next text, so a single over-budget
-        text goes out alone (see the class docstring on server-side truncation).
+        Tokens are counted once per call (one ``encode_batch`` over all
+        texts). An empty batch always accepts the next text, so a single
+        over-budget text goes out alone (see the class docstring on
+        server-side truncation). A single input short-circuits — one text is
+        always one batch — keeping the query path tokenizer-free.
         """
+        if len(texts) <= 1:
+            if texts:
+                yield list(texts)
+            return
         batch: list[str] = []
         batch_tokens = 0
-        for text in texts:
-            tokens = _estimate_tokens(text)
+        for text, tokens in zip(texts, self._count_tokens(texts), strict=True):
             if batch and (
                 len(batch) >= self.batch_size
                 or batch_tokens + tokens > self.max_tokens_per_batch
