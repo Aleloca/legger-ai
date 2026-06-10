@@ -12,6 +12,8 @@ import pytest
 from legger.corpus.models import Act, Article, Comma
 from legger.corpus.parser import parse_act
 from legger.corpus.refs import (
+    _KNOWN_CODICI,
+    SOURCE_RANK,
     ActRef,
     act_slugs,
     act_type_from_collection,
@@ -235,6 +237,30 @@ def test_header_with_letter_suffix_number() -> None:
     assert ref.number == "7-b"
 
 
+def test_header_lowercase_letter_suffix_is_not_taken() -> None:
+    """Single-letter suffixes are uppercase-only BY DESIGN (see _HEADER).
+
+    A lowercase letter would swallow title continuations ("n. 241 e
+    successive modificazioni" -> "241-e", a wrong merge); the corpus scan
+    found zero lowercase single-letter suffixes, so nothing is lost.
+    """
+    ref = derive_act_ref(
+        make_act(title="DECRETO LEGISLATIVO 15 novembre 1943 n. 7-b"),
+        "Decreti Legislativi/x.md",
+    )
+    assert ref.act_ref == "dlgs-7-1943"
+    assert ref.number == "7"
+
+
+def test_header_conjunction_after_number_is_not_a_suffix() -> None:
+    ref = derive_act_ref(
+        make_act(title="LEGGE 7 agosto 1990 n. 241 e successive modificazioni"),
+        "Leggi contenenti deleghe/x.md",
+    )
+    assert ref.act_ref == "legge-241-1990"
+    assert ref.number == "241"
+
+
 @pytest.mark.parametrize(
     ("title", "act_ref", "number", "date"),
     [
@@ -267,6 +293,58 @@ def test_known_codice_title_without_number() -> None:
         date=None,
         source="header",
     )
+
+
+@pytest.mark.parametrize(
+    ("title", "slug"),
+    [
+        ("Codice penale militare di pace", "codice-penale-militare-pace"),
+        ("Codice penale militare di guerra", "codice-penale-militare-guerra"),
+        # The article keeps working in front of the extended names too.
+        ("Il Codice penale militare di pace", "codice-penale-militare-pace"),
+    ],
+)
+def test_military_penal_codes_do_not_merge_into_codice_penale(title: str, slug: str) -> None:
+    """The 'codice penale' entry must NOT swallow the military penal codes."""
+    ref = derive_act_ref(make_act(title=title), "Codici/x.md")
+    assert ref.act_ref == slug
+    assert ref.act_type == "codice"
+    assert ref.source == "header"
+
+
+def test_known_codici_registry_is_sorted_longest_first() -> None:
+    """Ordering invariant: longest-prefix-first, enforced at definition time.
+
+    With non-increasing key lengths an extended name ("codice penale militare
+    di pace") can never be shadowed by its prefix ("codice penale").
+    """
+    lengths = [len(name) for name, _ in _KNOWN_CODICI]
+    assert lengths == sorted(lengths, reverse=True)
+
+
+def test_attuazione_title_does_not_match_codice() -> None:
+    """Documented invariant: the keyword must OPEN the title."""
+    ref = derive_act_ref(
+        make_act(title="Disposizioni per l'attuazione del Codice di procedura civile"),
+        "Codici/x.md",
+    )
+    assert ref.act_ref != "codice-procedura-civile"
+    assert ref.source == "filename"
+
+
+def test_known_codice_strips_leading_article() -> None:
+    """Documented invariant: removeprefix('il ') before the registry match."""
+    ref = derive_act_ref(make_act(title="Il Codice Civile"), "Codici/x.md")
+    assert ref.act_ref == "codice-civile"
+    assert ref.source == "header"
+
+
+def test_known_codice_requires_word_boundary() -> None:
+    """The keyword matches whole words only: 'codice penale' must not match a
+    mid-word extension of the keyword (synthetic title)."""
+    ref = derive_act_ref(make_act(title="CODICE PENALESCO"), "Codici/x.md")
+    assert ref.act_ref != "codice-penale"
+    assert ref.source == "filename"
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +400,52 @@ def test_urn_with_year_only_date() -> None:
     assert ref.source == "urn"
 
 
+def test_urn_military_codice_tipo_maps_to_military_slug() -> None:
+    """URN tipo codice.penale.militare.* must not merge into codice-penale."""
+    body = (
+        "Vedi (http://www.normattiva.it/uri-res/N2Ls?"
+        "urn:nir:stato:codice.penale.militare.di.pace:1941-02-20;303)."
+    )
+    ref = derive_act_ref(make_act(title=None, body=body), "Codici/x.md")
+    assert ref.act_ref == "codice-penale-militare-pace"
+    assert ref.act_type == "codice"
+    assert ref.source == "urn"
+
+
+def test_urn_in_subtitle_is_found() -> None:
+    ref = derive_act_ref(
+        make_act(title=None, subtitle=URN_BODY, body="testo senza link"),
+        "Codici/x.md",
+    )
+    assert ref.act_ref == "dlgs-1-2018"
+    assert ref.source == "urn"
+
+
+def test_urn_in_second_comma_is_not_taken() -> None:
+    """The URN scan stops after the FIRST comma: a foreign act cited from
+    comma 2 onwards must never become the act's own identity."""
+    foreign = (
+        "Ai sensi della [legge 241/1990](http://www.normattiva.it/uri-res/N2Ls?"
+        "urn:nir:stato:legge:1990;241) si applica."
+    )
+    act = Act(
+        title=None,
+        subtitle=None,
+        articles=[
+            Article(
+                number="1",
+                commi=[
+                    Comma(number="1", text="testo senza alcun link"),
+                    Comma(number="2", text=foreign),
+                ],
+            )
+        ],
+    )
+    ref = derive_act_ref(act, DECADUTO)
+    assert ref.act_ref != "legge-241-1990"
+    assert ref.source == "filename"
+
+
 # ---------------------------------------------------------------------------
 # derive_act_ref: filename fallback (A3.c)
 # ---------------------------------------------------------------------------
@@ -359,6 +483,45 @@ def test_filename_fallback_generic_slug() -> None:
     assert ref.act_ref == "dl-disposizioni-urgenti-in-materia-sanitaria-11"
     assert ref.act_type == "decreto_legge"
     assert ref.source == "filename"
+
+
+def test_filename_truncation_disambiguates_with_stem_hash() -> None:
+    """Two >100-char slugs sharing their first 100 chars must NOT collide:
+    the truncated slug carries a stable hash of the full original stem."""
+    shared = "Attuazione della direttiva " + "comunitaria " * 8  # > 100 slug chars
+    path_a = f"Atti di recepimento direttive UE/{shared}sui rifiuti.md"
+    path_b = f"Atti di recepimento direttive UE/{shared}sulle acque.md"
+    ref_a = derive_act_ref(make_act(title=None), path_a)
+    ref_b = derive_act_ref(make_act(title=None), path_b)
+    assert ref_a.act_ref != ref_b.act_ref
+    assert ref_a.source == ref_b.source == "filename"
+    # Stable: same (content, path) -> same act_ref, with an 8-hex-char tail.
+    assert ref_a == derive_act_ref(make_act(title=None), path_a)
+    for ref in (ref_a, ref_b):
+        tail = ref.act_ref.rsplit("-", 1)[1]
+        assert len(tail) == 8
+        assert all(c in "0123456789abcdef" for c in tail)
+        assert all(c.isascii() and (c.isalnum() or c == "-") for c in ref.act_ref)
+
+
+def test_filename_short_slug_is_not_hashed() -> None:
+    """The hash tail only appears when truncation actually occurs."""
+    ref = derive_act_ref(make_act(title=None), DECADUTO)
+    assert ref.act_ref == "dl-disposizioni-urgenti-in-materia-sanitaria-11"
+
+
+# ---------------------------------------------------------------------------
+# Source ranking for D2 dedup
+# ---------------------------------------------------------------------------
+
+
+def test_source_rank_orders_header_urn_filename() -> None:
+    assert SOURCE_RANK == {"header": 0, "urn": 1, "filename": 2}
+    header = derive_act_ref(parse_fixture(PROTEZIONE_CIVILE), PROTEZIONE_CIVILE)
+    urn = derive_act_ref(make_act(title=None, body=URN_BODY), "Codici/x.md")
+    filename = derive_act_ref(make_act(title=None), DECADUTO)
+    assert (header.rank, urn.rank, filename.rank) == (0, 1, 2)
+    assert header.rank < urn.rank < filename.rank
 
 
 def test_never_crashes_on_garbage() -> None:

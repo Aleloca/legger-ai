@@ -33,22 +33,37 @@ c. **filename** -- low-quality fallback, documented per filename class:
    a GU codice redazionale yield ``gu-<codice>`` (the codice redazionale is
    globally unique and collection-independent, so the two filename classes of
    the same act converge); any other stem yields
-   ``<collection-prefix>-<slug(stem)>``, which IS collection-dependent --
+   ``<collection-prefix>-<slug(stem)>`` (slugs longer than 100 chars are
+   truncated and suffixed with a stable hash of the full stem, so two long
+   near-identical titles never collide), which IS collection-dependent --
    acceptable because ~95k filenames collide across collections while naming
    *different* acts (A7): a wrong merge is worse than a missed dedup.
 
-Known limitation (relevant to B5/D2 dedup): the three sources are not
-guaranteed to agree with each other for the same act (e.g. the header of the
-Codice Penale carrier decree gives ``rd-1398-1930`` while a
-``urn:nir:stato:codice.penale`` link gives ``codice-penale``). Since the
-derivation is deterministic on (content, path), identical files always get
-the same act_ref; mixed-source mismatches can only happen between *different*
-files of the same act, and ``source`` is exposed so the ingestion can rank
-header-derived refs above fallback ones.
+Known limitations (relevant to B5/D2 dedup):
+
+- the three sources are not guaranteed to agree with each other for the same
+  act (e.g. the header of the Codice Penale carrier decree gives
+  ``rd-1398-1930`` while a ``urn:nir:stato:codice.penale`` link gives
+  ``codice-penale``). Since the derivation is deterministic on
+  (content, path), identical files always get the same act_ref; mixed-source
+  mismatches can only happen between *different* files of the same act, and
+  ``source`` is exposed (with :data:`SOURCE_RANK` / :attr:`ActRef.rank`) so
+  the ingestion can rank header-derived refs above fallback ones.
+- the URN scan (A3.b) is deliberately bounded to the subtitle plus the FIRST
+  comma: almost every comma after the opening one cites OTHER acts
+  ("legge 7 agosto 1990, n. 241" links are everywhere), so scanning the whole
+  body would frequently misattribute a *cited* act's URN to the act being
+  derived -- a wrong-merge class. The flip side is a missed URN when the only
+  self-referencing link appears later in the body; per the project principle
+  (a wrong merge is worse than a missed dedup) that act simply falls through
+  to the filename fallback. Note the bound does NOT remove the failure mode
+  entirely: a foreign URN in the subtitle or first comma is still picked up.
 """
 
+import hashlib
 import re
 import unicodedata
+from collections.abc import Iterator
 from pathlib import PurePosixPath
 from typing import Literal
 
@@ -58,6 +73,10 @@ from legger.corpus._common import SUFFIX_ALT
 from legger.corpus.models import Act, Vigenza
 
 Source = Literal["header", "urn", "filename"]
+
+# Dedup ranking for D2: when the same act_ref question is settled by multiple
+# files, lower rank wins (header is authoritative, filename is a last resort).
+SOURCE_RANK: dict[Source, int] = {"header": 0, "urn": 1, "filename": 2}
 
 
 class ActRef(BaseModel):
@@ -69,6 +88,11 @@ class ActRef(BaseModel):
     year: int | None = None
     date: str | None = None  # ISO YYYY-MM-DD
     source: Source
+
+    @property
+    def rank(self) -> int:
+        """Dedup rank of the derivation source (lower is better), see D2."""
+        return SOURCE_RANK[self.source]
 
 
 # ---------------------------------------------------------------------------
@@ -227,37 +251,60 @@ def _slugify(text: str) -> str:
 # Known codici registry (stable slugs for codici named without numero/anno)
 # ---------------------------------------------------------------------------
 
-# Matched with startswith() on the normalized title (or URN tipo with dots as
-# spaces): the keyword must OPEN the text, so that "Disposizioni per
-# l'attuazione del Codice di procedura civile" does NOT collide with the CPC
-# itself. "codice di procedura *" must precede the bare "codice civile" /
-# "codice penale" entries.
-_KNOWN_CODICI = (
-    ("codice di procedura civile", "codice-procedura-civile"),
-    ("codice di procedura penale", "codice-procedura-penale"),
-    ("codice procedura civile", "codice-procedura-civile"),
-    ("codice procedura penale", "codice-procedura-penale"),
-    ("codice civile", "codice-civile"),
-    ("codice penale", "codice-penale"),
-    ("codice della navigazione", "codice-navigazione"),
-    ("codice della strada", "codice-strada"),
-    ("codice del consumo", "codice-consumo"),
-    ("codice dei contratti pubblici", "codice-contratti-pubblici"),
-    ("codice della protezione civile", "codice-protezione-civile"),
-    ("codice protezione civile", "codice-protezione-civile"),
-    ("codice dell ordinamento militare", "codice-ordinamento-militare"),
-    ("codice in materia di protezione dei dati personali", "codice-privacy"),
-    ("codice delle comunicazioni elettroniche", "codice-comunicazioni-elettroniche"),
-    ("codice della proprieta industriale", "codice-proprieta-industriale"),
-    ("codice dell amministrazione digitale", "codice-amministrazione-digitale"),
-    ("codice del terzo settore", "codice-terzo-settore"),
-    ("codice della crisi d impresa", "codice-crisi-impresa"),
-    ("codice dei beni culturali", "codice-beni-culturali"),
-    ("codice delle assicurazioni private", "codice-assicurazioni-private"),
-    ("codice del processo amministrativo", "codice-processo-amministrativo"),
-    ("codice antimafia", "codice-antimafia"),
-    ("codice della nautica da diporto", "codice-nautica-diporto"),
-    ("codice postale e delle telecomunicazioni", "codice-postale-telecomunicazioni"),
+# Matched at the START of the normalized title (or URN tipo with dots as
+# spaces) on a whole-word boundary: the keyword must OPEN the text, so that
+# "Disposizioni per l'attuazione del Codice di procedura civile" does NOT
+# collide with the CPC itself.
+#
+# Prefix-extension hazards (a registry key opening the title of a DIFFERENT
+# act) are the wrong-merge class of this matcher; the registry is therefore
+# sorted longest-key-first at definition time, so an extended name always
+# wins over its prefix. Audit notes:
+# - "codice penale" used to swallow the military penal codes ("Codice penale
+#   militare di pace"/"di guerra", also reachable as URN tipo
+#   ``codice.penale.militare.di.pace``): both now have explicit entries;
+# - "codice dei contratti pubblici" names three distinct carrier acts (dlgs
+#   163/2006, 50/2016, 36/2023). All three corpus files carry a parseable
+#   dlgs header, so the registry never fires for them; the bare name (title
+#   or URN) inherently means "the codice vigente" and keeps the shared slug;
+# - the Costituzione is NOT in the corpus (the "Leggi costituzionali"
+#   collection holds only revision laws and special statutes), so no
+#   "costituzione" well-known slug is registered -- revisit if a corpus
+#   update ever ships the Costituzione itself.
+_KNOWN_CODICI: tuple[tuple[str, str], ...] = tuple(
+    sorted(
+        [
+            ("codice di procedura civile", "codice-procedura-civile"),
+            ("codice di procedura penale", "codice-procedura-penale"),
+            ("codice procedura civile", "codice-procedura-civile"),
+            ("codice procedura penale", "codice-procedura-penale"),
+            ("codice civile", "codice-civile"),
+            ("codice penale", "codice-penale"),
+            ("codice penale militare di pace", "codice-penale-militare-pace"),
+            ("codice penale militare di guerra", "codice-penale-militare-guerra"),
+            ("codice della navigazione", "codice-navigazione"),
+            ("codice della strada", "codice-strada"),
+            ("codice del consumo", "codice-consumo"),
+            ("codice dei contratti pubblici", "codice-contratti-pubblici"),
+            ("codice della protezione civile", "codice-protezione-civile"),
+            ("codice protezione civile", "codice-protezione-civile"),
+            ("codice dell ordinamento militare", "codice-ordinamento-militare"),
+            ("codice in materia di protezione dei dati personali", "codice-privacy"),
+            ("codice delle comunicazioni elettroniche", "codice-comunicazioni-elettroniche"),
+            ("codice della proprieta industriale", "codice-proprieta-industriale"),
+            ("codice dell amministrazione digitale", "codice-amministrazione-digitale"),
+            ("codice del terzo settore", "codice-terzo-settore"),
+            ("codice della crisi d impresa", "codice-crisi-impresa"),
+            ("codice dei beni culturali", "codice-beni-culturali"),
+            ("codice delle assicurazioni private", "codice-assicurazioni-private"),
+            ("codice del processo amministrativo", "codice-processo-amministrativo"),
+            ("codice antimafia", "codice-antimafia"),
+            ("codice della nautica da diporto", "codice-nautica-diporto"),
+            ("codice postale e delle telecomunicazioni", "codice-postale-telecomunicazioni"),
+        ],
+        key=lambda entry: len(entry[0]),
+        reverse=True,
+    )
 )
 
 
@@ -265,7 +312,8 @@ def _known_codice_slug(text: str) -> str | None:
     norm = _normalize_words(text)
     norm = norm.removeprefix("il ")
     for name, slug in _KNOWN_CODICI:
-        if norm.startswith(name):
+        # Whole-word prefix: "codice civile" must not match "codice civilistico".
+        if norm == name or norm.startswith(name + " "):
             return slug
     return None
 
@@ -295,6 +343,11 @@ _MONTHS = {
 # ("7 bis"), a single uppercase letter ("7-B") or an uppercase roman numeral
 # (19th-century regi decreti: "n. MMMDCCCLXXV" -- normalized to arabic, as
 # confirmed by the matching GU codice redazionale, e.g. 9003875R -> 3875).
+# The single-letter suffix is DELIBERATELY uppercase-only: a lowercase letter
+# would swallow the conjunction/preposition of a title continuation
+# ("n. 241 e successive modificazioni" -> number "241-e", a wrong-merge
+# class), and a scan of all 287,913 corpus first lines found zero lowercase
+# single-letter suffixes (headers print them uppercase, "7-B").
 _HEADER = re.compile(
     r"^\s*(?P<tipo>\D+?)\s+"
     r"(?P<day>\d{1,2})°?\s+"
@@ -352,7 +405,11 @@ _URN = re.compile(
 
 
 def _from_urn(act: Act) -> ActRef | None:
-    match = _URN.search(_act_text(act))
+    match = None
+    for part in _urn_scan_parts(act):
+        match = _URN.search(part)
+        if match is not None:
+            break
     if match is None:
         return None
     tipo = match.group("tipo")
@@ -378,15 +435,20 @@ def _from_urn(act: Act) -> ActRef | None:
     )
 
 
-def _act_text(act: Act) -> str:
-    """Subtitle plus article bodies, in document order (URN scan input)."""
-    parts: list[str] = []
+def _urn_scan_parts(act: Act) -> Iterator[str]:
+    """URN scan input: the subtitle, then the FIRST comma -- nothing else.
+
+    Self-referencing URNs (the Normattiva permalink of the act itself) appear
+    in the opening material; later commi cite OTHER acts, so widening the
+    scan would misattribute a cited act's URN (see the module docstring
+    limitations). The scan is incremental: the caller stops at the first hit.
+    """
     if act.subtitle:
-        parts.append(act.subtitle)
+        yield act.subtitle
     for article in act.articles:
-        for comma in article.commi:
-            parts.append(comma.text)
-    return "\n".join(parts)
+        if article.commi:
+            yield article.commi[0].text
+            return
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +491,15 @@ def _from_filename(rel_path: str, collection: str) -> ActRef:
             source="filename",
         )
 
-    slug = _slugify(stem)[:100].rstrip("-") or "atto"
+    slug = _slugify(stem)
+    if len(slug) > 100:
+        # Two long near-identical stems ("Attuazione della direttiva ..."
+        # titles) can share their first 100 slug chars while naming different
+        # acts: disambiguate the truncation with a stable hash of the FULL
+        # original stem, so the ref stays deterministic across corpus updates.
+        digest = hashlib.sha1(stem.encode("utf-8")).hexdigest()[:8]
+        slug = f"{slug[:100].rstrip('-')}-{digest}"
+    slug = slug or "atto"
     return ActRef(
         act_ref=f"{_ref_prefix(act_type)}-{slug}",
         act_type=act_type,
