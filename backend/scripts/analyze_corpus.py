@@ -188,12 +188,21 @@ def git_info(corpus: Path) -> dict[str, str]:
             ["git", "-C", str(corpus), *args], capture_output=True, text=True, check=True
         ).stdout.strip()
 
-    return {
-        "sha": run("rev-parse", "HEAD"),
-        "commit_date": run("log", "-1", "--format=%cI"),
-        "n_commits": run("rev-list", "--count", "HEAD"),
-        "shallow": run("rev-parse", "--is-shallow-repository"),
-    }
+    try:
+        return {
+            "sha": run("rev-parse", "HEAD"),
+            "commit_date": run("log", "-1", "--format=%cI"),
+            "n_commits": run("rev-list", "--count", "HEAD"),
+            "shallow": run("rev-parse", "--is-shallow-repository"),
+        }
+    except FileNotFoundError:
+        sys.exit("Comando `git` non trovato nel PATH: installare git per generare il report.")
+    except subprocess.CalledProcessError as exc:
+        sys.exit(
+            f"Impossibile leggere i metadati git di {corpus} "
+            f"(git {' '.join(exc.cmd[3:])}: {exc.stderr.strip() or exc.returncode}). "
+            "Il corpus deve essere un clone git di italia-corpus."
+        )
 
 
 def percentiles(values: list[int]) -> dict[str, int]:
@@ -208,19 +217,26 @@ def percentiles(values: list[int]) -> dict[str, int]:
     }
 
 
-def collect_collections(corpus: Path) -> dict[str, list[tuple[str, int]]]:
-    """Per ogni collezione (cartella top-level), elenco ordinato (filename, size)."""
+def collect_collections(corpus: Path) -> tuple[dict[str, list[tuple[str, int]]], list[str]]:
+    """Per ogni collezione (cartella top-level), elenco ordinato (filename, size).
+
+    Restituisce anche le voci saltate DENTRO le collezioni (sottocartelle o file
+    non `.md`), cosi' l'invariante "nessuna sotto-struttura" e' verificato a ogni
+    esecuzione invece di essere assunto in silenzio.
+    """
     collections: dict[str, list[tuple[str, int]]] = {}
+    skipped: list[str] = []
     for entry in sorted(corpus.iterdir(), key=lambda p: p.name):
         if not entry.is_dir() or entry.name == ".git":
             continue
-        files = [
-            (f.name, f.stat().st_size)
-            for f in entry.iterdir()
-            if f.is_file() and f.suffix == ".md"
-        ]
-        collections[entry.name] = sorted(files)
-    return collections
+        files: list[tuple[str, int]] = []
+        for f in sorted(entry.iterdir(), key=lambda p: p.name):
+            if f.is_file() and f.suffix == ".md":
+                files.append((f.name, f.stat().st_size))
+            else:
+                skipped.append(f"{entry.name}/{f.name}")
+        collections[entry.name] = files
+    return collections, skipped
 
 
 def report() -> None:
@@ -230,7 +246,7 @@ def report() -> None:
         sys.exit(f"Corpus non trovato in {corpus}: clonare italia-corpus e/o settare CORPUS_PATH")
 
     info = git_info(corpus)
-    collections = collect_collections(corpus)
+    collections, skipped_entries = collect_collections(corpus)
     rng = random.Random(SEED)
 
     print("# Analisi del corpus italia-corpus")
@@ -257,6 +273,15 @@ def report() -> None:
     print()
     print("> NB: le dimensioni includono il padding NUL descritto in \"Casi patologici\":")
     print("> la quasi totalita' dei ~71 GB di `Regi decreti` e' padding, non testo.")
+    print()
+    print(
+        f"Voci saltate dentro le collezioni (sottocartelle o file non `.md`): "
+        f"{len(skipped_entries)}."
+    )
+    if skipped_entries:
+        print("ATTENZIONE: l'invariante \"nessuna sotto-struttura\" NON vale piu':")
+        for rel in skipped_entries[:10]:
+            print(f"- `{rel[:110]}`")
 
     # ------------------------------------------------- vigenza: cartelle dedicate
     print()
@@ -476,18 +501,39 @@ def report() -> None:
     print("### Duplicazione tra collezioni")
     print()
     name_count: Counter[str] = Counter()
+    pair_count: Counter[tuple[str, int]] = Counter()
     for files in collections.values():
-        for fn, _ in files:
+        for fn, size in files:
             name_count[fn] += 1
+            pair_count[(fn, size)] += 1
     dup_names = sum(1 for c in name_count.values() if c > 1)
+    dup_pairs = sum(1 for c in pair_count.values() if c > 1)
     print(
-        f"Le collezioni si SOVRAPPONGONO: {dup_names} filename (su {len(name_count)} unici, "
-        f"{tot_files} file totali) compaiono in 2+ collezioni."
+        f"Le collezioni si sovrappongono, ma MOLTO meno di quanto suggeriscano i soli nomi: "
+        f"{dup_names} filename (su {len(name_count)} unici, {tot_files} file totali) compaiono "
+        f"in 2+ collezioni, ma solo {dup_pairs} coppie (filename, dimensione) coincidono."
     )
-    print("Esempi (filename, n. collezioni):")
     print()
-    for fn, c in sorted(name_count.items(), key=lambda x: (-x[1], x[0]))[:5]:
-        print(f"- `{fn[:90]}` ({c})")
+    print(
+        f"- **{dup_names} collisioni di nome**: in larga parte atti DIVERSI che condividono il "
+        "titolo sanificato. Es. `Modificazioni delle aliquote dellimposta di fabbricazione su "
+        "alcuni prodotti petroliferi.md` compare in 5 collezioni ma sono 5 decreti distinti "
+        "(dimensioni tutte diverse): il filename NON identifica l'atto."
+    )
+    print(
+        f"- **~{dup_pairs} duplicati plausibili** (stesso nome E stessa dimensione in 2+ "
+        "collezioni): lo stesso atto archiviato in piu' collezioni. La conferma definitiva "
+        "richiederebbe un hash del contenuto; la dimensione identica e' un proxy conservativo."
+    )
+    print()
+    print("Esempi di duplicati stesso-nome-stessa-dimensione (i piu' grandi):")
+    print()
+    same_size_dups = sorted(
+        ((fn, size, c) for (fn, size), c in pair_count.items() if c > 1),
+        key=lambda x: (-x[1], x[0]),
+    )
+    for fn, size, c in same_size_dups[:5]:
+        print(f"- `{fn[:90]}` ({fmt_size(size)}, {c} collezioni)")
 
     print()
     print(PARSER_ASSUMPTIONS.strip())
@@ -496,8 +542,9 @@ def report() -> None:
 PARSER_ASSUMPTIONS = """
 ## Assunzioni del parser
 
-Sezione curata manualmente (NON rigenerata dallo script: dopo una nuova esecuzione
-ricontrollare e ri-appendere). Verificata sui file reali del commit indicato in testa
+Sezione curata manualmente nella costante ``PARSER_ASSUMPTIONS`` dello script: la
+rigenerazione del report la include automaticamente, ma il contenuto va aggiornato
+a mano se il corpus cambia. Verificata sui file reali del commit indicato in testa
 al report.
 
 **A1 — Due formati di file, il parser gestisce solo il Markdown (per ora).**
@@ -564,10 +611,15 @@ Mappa cartella → stato: `Atti normativi abrogati (in originale)` → `abrogato
 `DL decaduti` → `decaduto`; tutte le altre 21 collezioni → `vigente` (testo
 multivigente consolidato, salvo i file `*_ORIGINALE_*` che sono la versione originale
 in GU). Le collezioni sono il primo (e unico) livello di directory: nessuna
-sotto-cartella. ATTENZIONE: le collezioni si sovrappongono (~95k filename compaiono
-in 2+ collezioni, es. `Codice dellordinamento militare. 10G0089.md` sta sia in
-`Codici` sia in `Decreti Legislativi`): l'ingestion deve deduplicare per act_ref e
-assegnare la vigenza con priorita' alle cartelle abrogati/decaduti.
+sotto-cartella (invariante verificato a ogni run, vedi "Voci saltate" sopra).
+ATTENZIONE alla sovrapposizione, su due piani distinti: ~95k filename compaiono in
+2+ collezioni, ma sono in larga parte atti DIVERSI con lo stesso titolo sanificato
+(stesse parole, dimensioni/contenuti differenti); i duplicati veri plausibili —
+stesso nome E stessa dimensione — sono ~6.3k (es. `Codice dellordinamento
+militare. 10G0089.md`, byte-identico per dimensione sia in `Codici` sia in
+`Decreti Legislativi`). Conseguenza doppia per l'ingestion: deduplicare per
+act_ref (mai per filename, che non identifica l'atto) e assegnare la vigenza con
+priorita' alle cartelle abrogati/decaduti.
 
 **A8 — Convenzioni Normattiva nel testo.**
 `((testo))` = testo modificato/inserito dal consolidamento; blocchi `AGGIORNAMENTO

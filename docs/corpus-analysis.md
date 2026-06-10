@@ -38,6 +38,8 @@
 > NB: le dimensioni includono il padding NUL descritto in "Casi patologici":
 > la quasi totalita' dei ~71 GB di `Regi decreti` e' padding, non testo.
 
+Voci saltate dentro le collezioni (sottocartelle o file non `.md`): 0.
+
 ## Cartelle di vigenza (abrogati / decaduti)
 
 Nomi ESATTI delle cartelle che codificano lo stato di vigenza:
@@ -348,19 +350,24 @@ quasi tutta la dimensione su disco. Il contenuto utile termina al primo NUL.
 
 ### Duplicazione tra collezioni
 
-Le collezioni si SOVRAPPONGONO: 95492 filename (su 190739 unici, 287912 file totali) compaiono in 2+ collezioni.
-Esempi (filename, n. collezioni):
+Le collezioni si sovrappongono, ma MOLTO meno di quanto suggeriscano i soli nomi: 95492 filename (su 190739 unici, 287912 file totali) compaiono in 2+ collezioni, ma solo 6303 coppie (filename, dimensione) coincidono.
 
-- `Modificazioni delle aliquote dellimposta di fabbricazione su alcuni prodotti petroliferi.m` (5)
-- `Attuazione della direttiva 2022-2464-UE del Parlamento europeo e del Consiglio del 14 dice` (4)
-- `Attuazione della direttiva UE 2014-55 del Parlamento europeo e del Consiglio del 16 aprile` (4)
-- `Attuazione della direttiva UE 2016-1148 del Parlamento europeo e del Consiglio del 6 lugli` (4)
-- `Attuazione della direttiva UE 2019-944 del Parlamento europeo e del Consiglio del 5 giugno` (4)
+- **95492 collisioni di nome**: in larga parte atti DIVERSI che condividono il titolo sanificato. Es. `Modificazioni delle aliquote dellimposta di fabbricazione su alcuni prodotti petroliferi.md` compare in 5 collezioni ma sono 5 decreti distinti (dimensioni tutte diverse): il filename NON identifica l'atto.
+- **~6303 duplicati plausibili** (stesso nome E stessa dimensione in 2+ collezioni): lo stesso atto archiviato in piu' collezioni. La conferma definitiva richiederebbe un hash del contenuto; la dimensione identica e' un proxy conservativo.
+
+Esempi di duplicati stesso-nome-stessa-dimensione (i piu' grandi):
+
+- `Regolamento recante abrogazione espressa delle norme regolamentari vigenti che hanno esaur` (28.1 MB, 2 collezioni)
+- `1942-04-04_042U0262_VIGENZA_2026-04-29_V0.md` (3.7 MB, 2 collezioni)
+- `Codice dellordinamento militare. 10G0089.md` (3.6 MB, 2 collezioni)
+- `Disposizioni in materia di armonizzazione dei sistemi contabili e degli schemi di bilancio` (3.3 MB, 2 collezioni)
+- `Norme in materia ambientale.md` (3.1 MB, 3 collezioni)
 
 ## Assunzioni del parser
 
-Sezione curata manualmente (NON rigenerata dallo script: dopo una nuova esecuzione
-ricontrollare e ri-appendere). Verificata sui file reali del commit indicato in testa
+Sezione curata manualmente nella costante ``PARSER_ASSUMPTIONS`` dello script: la
+rigenerazione del report la include automaticamente, ma il contenuto va aggiornato
+a mano se il corpus cambia. Verificata sui file reali del commit indicato in testa
 al report.
 
 **A1 — Due formati di file, il parser gestisce solo il Markdown (per ora).**
@@ -427,10 +434,15 @@ Mappa cartella → stato: `Atti normativi abrogati (in originale)` → `abrogato
 `DL decaduti` → `decaduto`; tutte le altre 21 collezioni → `vigente` (testo
 multivigente consolidato, salvo i file `*_ORIGINALE_*` che sono la versione originale
 in GU). Le collezioni sono il primo (e unico) livello di directory: nessuna
-sotto-cartella. ATTENZIONE: le collezioni si sovrappongono (~95k filename compaiono
-in 2+ collezioni, es. `Codice dellordinamento militare. 10G0089.md` sta sia in
-`Codici` sia in `Decreti Legislativi`): l'ingestion deve deduplicare per act_ref e
-assegnare la vigenza con priorita' alle cartelle abrogati/decaduti.
+sotto-cartella (invariante verificato a ogni run, vedi "Voci saltate" sopra).
+ATTENZIONE alla sovrapposizione, su due piani distinti: ~95k filename compaiono in
+2+ collezioni, ma sono in larga parte atti DIVERSI con lo stesso titolo sanificato
+(stesse parole, dimensioni/contenuti differenti); i duplicati veri plausibili —
+stesso nome E stessa dimensione — sono ~6.3k (es. `Codice dellordinamento
+militare. 10G0089.md`, byte-identico per dimensione sia in `Codici` sia in
+`Decreti Legislativi`). Conseguenza doppia per l'ingestion: deduplicare per
+act_ref (mai per filename, che non identifica l'atto) e assegnare la vigenza con
+priorita' alle cartelle abrogati/decaduti.
 
 **A8 — Convenzioni Normattiva nel testo.**
 `((testo))` = testo modificato/inserito dal consolidamento; blocchi `AGGIORNAMENTO
