@@ -13,7 +13,9 @@ from typing import Any
 import numpy as np
 import pytest
 
+from legger.corpus.chunker import MAX_TEXT
 from legger.retrieval.embedders import (
+    BGE_MAX_LENGTH,
     BgeM3Embedder,
     Embedder,
     VoyageEmbedder,
@@ -116,6 +118,26 @@ def test_bge_dims_and_batch_size() -> None:
     query_vec = embedder.embed_query("q")
     assert len(query_vec) == embedder.dim
     assert fake.calls[1]["texts"] == ["q"]
+
+
+def test_bge_encode_uses_capped_max_length() -> None:
+    embedder = BgeM3Embedder()
+    fake = FakeBgeModel()
+    embedder._model = fake
+
+    embedder.embed_documents(["a"])
+    assert fake.calls[0]["max_length"] == BGE_MAX_LENGTH
+
+
+def test_bge_max_length_covers_chunker_cap() -> None:
+    """BGE_MAX_LENGTH=4096 must remain lossless for chunker output.
+
+    Chunks are capped at chunker.MAX_TEXT chars; Italian legal text measures
+    ~2.26 chars/token under bge-m3's tokenizer, so 2.0 chars/token is a
+    conservative lower bound. If MAX_TEXT ever grows past the embed window,
+    this fails — raise BGE_MAX_LENGTH (at quadratic CPU cost) or shrink chunks.
+    """
+    assert MAX_TEXT / 2.0 < BGE_MAX_LENGTH
 
 
 # --- device detection (LEGGER_EMBED_DEVICE escape hatch) ---

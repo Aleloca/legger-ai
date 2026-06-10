@@ -132,6 +132,16 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
+#: Token window for bge-m3 encoding. The chunker caps every chunk at
+#: ``legger.corpus.chunker.MAX_TEXT`` (8000) chars, and Italian legal text
+#: measures ~2.26 chars/token (see the Voyage token-counting notes above), so
+#: the worst chunk is ~3600 tokens — 4096 truncates NOTHING for our data.
+#: bge-m3's native 8192 window is quadratically slower (attention) on CPU and
+#: was the cause of multi-tens-of-minutes lots on long-sequence batches.
+#: tests/test_embedders.py asserts MAX_TEXT / 2.0 < BGE_MAX_LENGTH so the
+#: suite fails if the chunk cap ever outgrows this window.
+BGE_MAX_LENGTH = 4096
+
 #: Devices accepted by the LEGGER_EMBED_DEVICE override.
 _VALID_DEVICES = ("cpu", "mps", "cuda")
 
@@ -203,7 +213,7 @@ class BgeM3Embedder:
         out = self._get_model().encode(
             texts,
             batch_size=self.batch_size,
-            max_length=8192,  # bge-m3's native limit; padding is to batch-longest
+            max_length=BGE_MAX_LENGTH,  # lossless for chunker-capped text; see constant
             return_dense=True,
             return_sparse=False,
             return_colbert_vecs=False,
