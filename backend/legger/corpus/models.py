@@ -8,7 +8,7 @@ the raw h1/h2 header text exactly for that purpose (A3).
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 Vigenza = Literal["vigente", "abrogato", "decaduto"]
 
@@ -53,10 +53,11 @@ class Act(BaseModel):
     ``subtitle`` the first non-article h2 after it (act title + GU code):
     together they are the raw material B4 needs to derive the canonical
     act_ref. Acts with no detectable article markers yield a single
-    pseudo-article with ``number="unico"`` (A10).
+    pseudo-article with ``number="unico"`` (A10); the >= 1 invariant is
+    enforced at the model level (``min_length=1``).
     """
 
     title: str | None = None
     subtitle: str | None = None
     source_format: SourceFormat = "markdown"
-    articles: list[Article] = []
+    articles: list[Article] = Field(min_length=1)

@@ -31,64 +31,47 @@ Structural rules implemented (see docs/corpus-analysis.md, A1-A10):
   cleanly detectable (a line that is exactly ``N O T E``) and are cut out of
   the article body: they reproduce text of *other* acts and would pollute
   retrieval.
+
+The article-assembly helpers and the marker grammar shared with the AKN path
+live in ``_common.py``.
 """
 
 import re
 from pathlib import Path
+from typing import Literal
 
-from legger.corpus.models import Act, Article, Comma
-
-# Latin ordinal suffixes in their legal order; index = sort rank. Longest-first
-# in the alternation so e.g. "quaterdecies" is not half-matched as "quater".
-_SUFFIXES = (
-    "bis",
-    "ter",
-    "quater",
-    "quinquies",
-    "sexies",
-    "septies",
-    "octies",
-    "novies",
-    "decies",
-    "undecies",
-    "duodecies",
-    "terdecies",
-    "quaterdecies",
-    "quindecies",
-    "quinquiesdecies",
-    "sexiesdecies",
-    "septiesdecies",
-    "duodevicies",
-    "octiesdecies",
-    "noviesdecies",
-    "vicies",
+from legger.corpus._common import (
+    PLAIN_ART,
+    SETEXT_ART,
+    SUFFIX_ALT,
+    ArticleDraft,
+    finish_article,
+    normalize_number,
 )
-_SUFFIX_RANK = {suffix: rank for rank, suffix in enumerate(_SUFFIXES, start=1)}
-_SUFFIX_ALT = "|".join(sorted(_SUFFIXES, key=len, reverse=True))
+from legger.corpus.akn import parse_akn_text
+from legger.corpus.models import Act, Article, Comma
 
 _H1_UNDERLINE = re.compile(r"^=+\s*$")
 _H2_UNDERLINE = re.compile(r"^-{2,}\s*$")
 _ATX = re.compile(r"^#{1,6}\s")
-_ATX_ART = re.compile(rf"^###\s+Art\.?\s*(\d+)(?:[ .-]+({_SUFFIX_ALT}))?\.?\s*$")
-_SETEXT_ART = re.compile(rf"^Art\.?\s+(\d+)(?:[ .-]+({_SUFFIX_ALT}))?\.?\s*$")
-# Plain markers also carry slash numbers ("CODICE CIVILE-art. 314/2": the
-# historical CC adoption articles 314/2..314/28), found in the AKN fixture.
-_PLAIN_ART = re.compile(rf"^(\S.*?)-art\.\s+(\d+(?:/\d+)?)(?:\s+({_SUFFIX_ALT}))?\s*$")
-_COMMA = re.compile(rf"^(\d+)(?:-({_SUFFIX_ALT}))?\.\s")
+_ATX_ART = re.compile(rf"^###\s+Art\.?\s*(\d+)(?:[ .-]+({SUFFIX_ALT}))?\.?\s*$")
 # "Articolo unico" heading (conversion/ratification laws) -- found in the real
 # corpus during B3 validation, not covered by A4: treated as article "unico".
 _ART_UNICO = re.compile(r"^Articolo\s+unico\.?\s*$", re.IGNORECASE)
 _PARTITION = re.compile(r"^(LIBRO|PARTE|TITOLO|CAPO|SEZIONE)\b", re.IGNORECASE)
-_NOTE_LINE = re.compile(r"^N O T E$")
-# Rubrica between parentheses (plain/AKN styles); "((" is a Normattiva
-# consolidation marker, never a rubrica.
-_RUBRIC = re.compile(r"^\((?!\()(.+?)\)\.?$")
 
 _BASE64_HTML_PREFIX = "PGh0bWw"  # base64 of "<html" (A1)
 
 
 def parse_act(path: Path) -> Act:
-    """Parse one corpus file into an :class:`Act`."""
+    """Parse one corpus file into an :class:`Act`.
+
+    Failure contract: this never raises on malformed input. Degenerate files
+    (empty, NUL-only, binary garbage, base64-looking prefix with a corrupt
+    payload) degrade to the markdown path, which yields a single
+    pseudo-article ``number="unico"`` (A10) -- one weird file out of 288k
+    must not abort a bootstrap run.
+    """
     raw = path.read_bytes()
     # A9: NUL padding -- the useful content is the prefix up to the first NUL.
     raw = raw.split(b"\x00", 1)[0]
@@ -96,24 +79,24 @@ def parse_act(path: Path) -> Act:
 
 
 def parse_act_text(text: str) -> Act:
-    """Parse act text (markdown or base64-encoded Akoma Ntoso HTML)."""
+    """Parse act text (markdown or base64-encoded Akoma Ntoso HTML).
+
+    Same failure contract as :func:`parse_act`: never raises on malformed
+    input.
+    """
     text = text.split("\x00", 1)[0]  # A9, for callers that pass raw text
     if text.lstrip().startswith(_BASE64_HTML_PREFIX):
-        # Local import: akn.py reuses this module's helpers (commi scanner,
-        # marker regexes), so a top-level import would be circular.
-        from legger.corpus.akn import parse_akn_text
-
-        return parse_akn_text(text)
+        try:
+            return parse_akn_text(text)
+        except ValueError:
+            # binascii.Error (a ValueError subclass): the file starts like
+            # base64 "<html" but the payload is corrupt (invalid characters
+            # are *discarded* by b64decode, so the mod-4 pre-truncation does
+            # not guarantee decodability). Degrade to the markdown path --
+            # garbage yields a pseudo-article "unico" -- instead of leaking
+            # an unanticipated exception type.
+            return _parse_markdown(text)
     return _parse_markdown(text)
-
-
-def _normalize_number(base: str, suffix: str | None) -> str:
-    return f"{base}-{suffix}" if suffix else base
-
-
-def _comma_sort_key(base: str, suffix: str | None) -> tuple[int, int]:
-    rank = _SUFFIX_RANK.get(suffix, len(_SUFFIXES) + 1) if suffix else 0
-    return (int(base), rank)
 
 
 # ---------------------------------------------------------------------------
@@ -183,18 +166,20 @@ def _parse_markdown(text: str) -> Act:
     path: list[str] = []
     articles: list[Article] = []
     orphan_lines: list[str] = []  # text outside any article (pseudo-article fallback)
-    current: dict | None = None
+    current: ArticleDraft | None = None
 
     def close_current() -> None:
         nonlocal current
         if current is not None:
-            articles.append(_finish_article(current))
+            articles.append(finish_article(current))
             current = None
 
-    def open_article(number: str, style: str, article_path: list[str]) -> None:
+    def open_article(
+        number: str, style: Literal["atx", "setext", "plain"], article_path: list[str]
+    ) -> None:
         nonlocal current
         close_current()
-        current = {"number": number, "style": style, "path": article_path, "lines": []}
+        current = ArticleDraft(number=number, style=style, path=article_path, lines=[])
 
     for kind, payload in events:
         if kind == "h1":
@@ -205,7 +190,7 @@ def _parse_markdown(text: str) -> Act:
         if kind == "atx":
             match = _ATX_ART.match(payload)
             if match:
-                open_article(_normalize_number(match.group(1), match.group(2)), "atx", list(path))
+                open_article(normalize_number(match.group(1), match.group(2)), "atx", list(path))
             elif _ART_UNICO.match(payload.lstrip("# ")):
                 open_article("unico", "atx", list(path))
             else:
@@ -213,10 +198,10 @@ def _parse_markdown(text: str) -> Act:
                 close_current()
             continue
         if kind == "h2":
-            match = _SETEXT_ART.match(payload)
+            match = SETEXT_ART.match(payload)
             if match:
                 open_article(
-                    _normalize_number(match.group(1), match.group(2)), "setext", list(path)
+                    normalize_number(match.group(1), match.group(2)), "setext", list(path)
                 )
                 continue
             if _ART_UNICO.match(payload):
@@ -232,10 +217,10 @@ def _parse_markdown(text: str) -> Act:
             continue
         # kind in ("line", "blank")
         if kind == "line":
-            match = _PLAIN_ART.match(payload)
+            match = PLAIN_ART.match(payload)
             if match:
                 open_article(
-                    _normalize_number(match.group(2), match.group(3)),
+                    normalize_number(match.group(2), match.group(3)),
                     "plain",
                     list(path) + [match.group(1)],
                 )
@@ -254,103 +239,3 @@ def _parse_markdown(text: str) -> Act:
         articles = [Article(number="unico", commi=[Comma(number=None, text=body)])]
 
     return Act(title=title, subtitle=subtitle, source_format="markdown", articles=articles)
-
-
-# ---------------------------------------------------------------------------
-# Article assembly (shared with the AKN path)
-# ---------------------------------------------------------------------------
-
-
-def _finish_article(current: dict) -> Article:
-    lines: list[str] = current["lines"]
-    lines = _cut_note_section(lines)
-    heading: str | None = None
-    if current["style"] == "atx":
-        heading, lines = _extract_atx_rubric(lines)
-    elif current["style"] in ("plain", "akn"):
-        heading, lines = _extract_paren_rubric(lines)
-    commi = _scan_commi(lines)
-    return Article(number=current["number"], heading=heading, path=current["path"], commi=commi)
-
-
-def _cut_note_section(lines: list[str]) -> list[str]:
-    """Drop the trailing GU redactional notes (a line that is exactly ``N O T E``)."""
-    for i, line in enumerate(lines):
-        if _NOTE_LINE.match(line.strip()):
-            return lines[:i]
-    return lines
-
-
-def _extract_atx_rubric(lines: list[str]) -> tuple[str | None, list[str]]:
-    """Rubrica of ATX articles: the first non-blank block after the marker.
-
-    Stops at a blank line or at the first comma line (articles whose body
-    starts directly with ``1.`` have no rubrica).
-    """
-    i = 0
-    while i < len(lines) and not lines[i].strip():
-        i += 1
-    captured: list[str] = []
-    j = i
-    while j < len(lines) and lines[j].strip() and not _COMMA.match(lines[j]):
-        captured.append(lines[j].strip())
-        j += 1
-    if not captured:
-        return None, lines
-    return " ".join(captured), lines[:i] + lines[j:]
-
-
-def _extract_paren_rubric(lines: list[str]) -> tuple[str | None, list[str]]:
-    """Rubrica of plain/AKN articles: a ``(...)`` line near the body start."""
-    seen_nonempty = 0
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        match = _RUBRIC.match(stripped)
-        if match:
-            return match.group(1), lines[:i] + lines[i + 1 :]
-        seen_nonempty += 1
-        if seen_nonempty >= 4:
-            break
-    return None, lines
-
-
-def _scan_commi(lines: list[str]) -> list[Comma]:
-    """Split an article body into commi (A5, best-effort).
-
-    A line-start ``N.`` / ``N-bis.`` opens a new comma only if (base, suffix)
-    sorts strictly after the previous accepted comma; rejected candidates
-    (numbered sub-lists in quoted amendment text) stay inside the current
-    comma. Leading un-numbered text becomes a ``Comma(number=None)``;
-    trailing material (e.g. AGGIORNAMENTO blocks) stays in the last comma.
-    """
-    commi: list[Comma] = []
-    bucket: list[str] = []
-    bucket_number: str | None = None
-    prev_key = (0, 0)
-    found_any = False
-
-    def flush() -> None:
-        nonlocal bucket
-        text = "\n".join(bucket).strip("\n").rstrip()
-        if bucket_number is not None or text.strip():
-            commi.append(Comma(number=bucket_number, text=text))
-        bucket = []
-
-    for line in lines:
-        match = _COMMA.match(line)
-        if match:
-            key = _comma_sort_key(match.group(1), match.group(2))
-            if key > prev_key:
-                flush()
-                bucket_number = _normalize_number(match.group(1), match.group(2))
-                prev_key = key
-                found_any = True
-        bucket.append(line)
-    flush()
-
-    if not found_any:
-        text = "\n".join(lines).strip("\n").strip()
-        return [Comma(number=None, text=text)]
-    return commi

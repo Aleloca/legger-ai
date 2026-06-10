@@ -21,19 +21,33 @@ decoded fixture:
 Parsing uses the stdlib ``html.parser`` because it is lenient: corpus files
 can be byte-truncated prefixes, so the decoded HTML may simply stop
 mid-document without closing tags.
+
+Failure contracts:
+
+- ``parse_akn_text`` raises ``binascii.Error`` (a ``ValueError``) on corrupt
+  base64; the caller (``parser.parse_act_text``) catches it and degrades to
+  the markdown path.
+- An ``article-num-akn`` heading that does not match the ``Art. N`` grammar
+  is kept verbatim as the article number and reported through a module-level
+  ``logging`` warning (logger ``legger.corpus.akn``) so bootstrap runs can
+  surface unexpected marker shapes without aborting.
 """
 
 import base64
+import logging
 import re
 from html.parser import HTMLParser
 
-from legger.corpus.models import Act, Article, Comma
-from legger.corpus.parser import (
-    _PLAIN_ART,
-    _SETEXT_ART,
-    _finish_article,
-    _normalize_number,
+from legger.corpus._common import (
+    PLAIN_ART,
+    SETEXT_ART,
+    ArticleDraft,
+    finish_article,
+    normalize_number,
 )
+from legger.corpus.models import Act, Article, Comma
+
+logger = logging.getLogger(__name__)
 
 # Classes that start a capture; any of them appearing while a capture is open
 # forcibly closes the previous one (they are always siblings in the document).
@@ -49,7 +63,11 @@ _CAPTURE_STARTERS = {
 
 
 def parse_akn_text(text: str) -> Act:
-    """Decode the base64 payload and parse the Akoma Ntoso HTML."""
+    """Decode the base64 payload and parse the Akoma Ntoso HTML.
+
+    Raises ``binascii.Error`` when the payload is not valid base64 (corrupt
+    file); ``parser.parse_act_text`` handles the fallback.
+    """
     cleaned = re.sub(r"\s+", "", text)
     # Truncated corpus files may not end on a 4-char base64 boundary.
     cleaned = cleaned[: len(cleaned) - len(cleaned) % 4]
@@ -64,13 +82,13 @@ def parse_akn_html(html: str) -> Act:
     extractor.flush_article()
 
     articles = [
-        _finish_article(
-            {
-                "number": raw["number"],
-                "style": "akn",
-                "path": raw["path"],
-                "lines": _body_lines(raw["parts"]),
-            }
+        finish_article(
+            ArticleDraft(
+                number=raw["number"],
+                style="akn",
+                path=raw["path"],
+                lines=_body_lines(raw["parts"]),
+            )
         )
         for raw in extractor.raw_articles
     ]
@@ -167,14 +185,24 @@ class _AknExtractor(HTMLParser):
             if self.subtitle is None:
                 self.subtitle = " ".join(text.split())
         elif kind == "artnum":
-            match = _SETEXT_ART.match(" ".join(text.split()))
-            number = _normalize_number(match.group(1), match.group(2)) if match else text.strip()
+            match = SETEXT_ART.match(" ".join(text.split()))
+            if match:
+                number = normalize_number(match.group(1), match.group(2))
+            else:
+                # Unexpected marker shape: keep the raw text as number and
+                # warn (see module docstring, failure contracts).
+                number = text.strip()
+                logger.warning(
+                    "article-num-akn heading %r does not match the 'Art. N' "
+                    "grammar; using the raw text as article number",
+                    number,
+                )
             self._open_article(number, [])
         elif kind == "attname":
             name = " ".join(text.split())
-            match = _PLAIN_ART.match(name)
+            match = PLAIN_ART.match(name)
             if match:
-                number = _normalize_number(match.group(2), match.group(3))
+                number = normalize_number(match.group(2), match.group(3))
                 self._open_article(number, [match.group(1)])
             else:
                 self._open_article(name, [])

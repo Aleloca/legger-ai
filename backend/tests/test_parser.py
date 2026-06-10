@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from legger.corpus.akn import parse_akn_html
 from legger.corpus.models import Act, Comma
 from legger.corpus.parser import parse_act, parse_act_text
 
@@ -501,3 +502,80 @@ class TestSynthetic:
         assert len(commi) == 1
         assert commi[0].number is None
         assert "Primo capoverso" in commi[0].text
+
+
+# ---------------------------------------------------------------------------
+# Failure contract: degenerate inputs never raise, always yield >= 1 article
+# ---------------------------------------------------------------------------
+
+
+def assert_sane_pseudo_act(act: Act) -> None:
+    assert isinstance(act, Act)
+    assert len(act.articles) == 1
+    assert act.articles[0].number == "unico"
+    assert len(act.articles[0].commi) == 1
+
+
+class TestDegenerateInputs:
+    def test_empty_text(self) -> None:
+        assert_sane_pseudo_act(parse_act_text(""))
+
+    def test_nul_only_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "nul.md"
+        path.write_bytes(b"\x00" * 64)
+        assert_sane_pseudo_act(parse_act(path))
+
+    def test_binary_garbage_file(self, tmp_path: Path) -> None:
+        # Invalid UTF-8 sequences (no NUL, so nothing is truncated away).
+        path = tmp_path / "garbage.md"
+        path.write_bytes(b"\xc3\x28\xff\xfe\x80\x81\xf0\x90\x28\xbc" * 32)
+        act = parse_act(path)
+        assert_sane_pseudo_act(act)
+
+    def test_corrupt_base64_falls_back_to_markdown(self) -> None:
+        # Starts like base64 "<html" but the payload has invalid characters;
+        # b64decode *discards* them, so the mod-4 pre-truncation cannot save
+        # the decode (binascii.Error). The defined behavior is to degrade to
+        # the markdown path: garbage -> pseudo-article "unico", never raise.
+        text = "PGh0bWw!!!???***" + "@" * 37
+        act = parse_act_text(text)
+        assert_sane_pseudo_act(act)
+        assert act.source_format == "markdown"
+        assert "PGh0bWw" in act.articles[0].commi[0].text
+
+    def test_corrupt_base64_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "corrupt_akn.md"
+        path.write_bytes(b"PGh0bWw\xc3\x28!!!not-base64-anymore***")
+        assert_sane_pseudo_act(parse_act(path))
+
+
+# ---------------------------------------------------------------------------
+# AKN: unmatched article-num-akn markers are kept verbatim and logged
+# ---------------------------------------------------------------------------
+
+
+class TestAknUnmatchedArtnum:
+    def test_warning_logged_and_raw_number_kept(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        html = (
+            '<html><body><h2 class="article-num-akn">Articolo strano</h2>'
+            '<span class="art-just-text-akn">testo del corpo</span></body></html>'
+        )
+        with caplog.at_level("WARNING", logger="legger.corpus.akn"):
+            act = parse_akn_html(html)
+        assert [a.number for a in act.articles] == ["Articolo strano"]
+        assert any(
+            "article-num-akn" in record.message and "Articolo strano" in record.getMessage()
+            for record in caplog.records
+        )
+
+    def test_no_warning_for_regular_marker(self, caplog: pytest.LogCaptureFixture) -> None:
+        html = (
+            '<html><body><h2 class="article-num-akn">Art. 3 bis</h2>'
+            '<span class="art-just-text-akn">testo</span></body></html>'
+        )
+        with caplog.at_level("WARNING", logger="legger.corpus.akn"):
+            act = parse_akn_html(html)
+        assert [a.number for a in act.articles] == ["3-bis"]
+        assert not caplog.records
