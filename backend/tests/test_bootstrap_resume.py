@@ -21,9 +21,12 @@ import pytest
 from qdrant_client import QdrantClient
 from sqlalchemy import Engine, select
 
+import legger.ingestion.bootstrap as bootstrap_module
 from legger.db import acts, get_engine, ingestion_progress, ingestion_runs
 from legger.ingestion.bootstrap import (
     BootstrapReport,
+    _FileTask,
+    _LotFlusher,
     bootstrap,
     corpus_head_sha,
     discover_files,
@@ -157,6 +160,41 @@ def test_discover_files_sorted_and_validated(tmp_path: Path) -> None:
         discover_files(tmp_path, ["Missing Coll"])
 
 
+def test_lot_flusher_releases_files_only_when_fully_durable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3-chunk files behind a lot_size-4 buffer: a file's callback fires only
+    when ALL its chunks are durable, and a dup is never released before its
+    owner."""
+    flushed_lots: list[int] = []
+
+    def fake_index_chunks(client, name, lot, embedder, sparse_model, *, lot_size, resume):
+        flushed_lots.append(len(lot))
+        return len(lot), 0
+
+    monkeypatch.setattr(bootstrap_module, "index_chunks", fake_index_chunks)
+    released: list[str] = []
+    flusher = _LotFlusher(
+        None, "c", None, None, 4, lambda tasks: released.extend(t.file_path for t in tasks)
+    )
+
+    def task(name: str, kind: str = "index") -> _FileTask:
+        return _FileTask(name, "sha", f"ref-{name}", kind)
+
+    flusher.add(task("a"), [object()] * 3)  # type: ignore[arg-type]
+    assert flushed_lots == []  # 3 < 4: nothing flushed
+    assert released == []  # a's chunks are not durable yet
+    flusher.add(task("a-dup", kind="dup"), [])
+    assert released == []  # 0-chunk dup queued behind its owner, NOT released first
+    flusher.add(task("b"), [object()] * 3)  # type: ignore[arg-type]
+    assert flushed_lots == [4]  # 6 buffered -> one full lot (a:3 + b:1)
+    assert released == ["a", "a-dup"]  # owner first, then its dup; b still has 2 pending
+    flusher.finish()
+    assert flushed_lots == [4, 2]  # tail lot
+    assert released == ["a", "a-dup", "b"]
+    assert flusher.chunks_indexed == 6
+
+
 def test_dry_run_on_fixtures_corpus_needs_no_services() -> None:
     settings = Settings(corpus_path=FIXTURES_CORPUS)
     report = bootstrap(dry_run=True, settings=settings)
@@ -176,6 +214,34 @@ def test_dry_run_on_fixtures_corpus_needs_no_services() -> None:
         "Leggi finanziarie e di bilancio",
         "Regi decreti",
     }
+
+
+def crashing_chunk_act_for(filename: str):
+    """A chunk_act wrapper raising only for files whose path ends in ``filename``."""
+    real_chunk_act = bootstrap_module.chunk_act
+
+    def crashing_chunk_act(act, ref, **kwargs):
+        if kwargs.get("file_path", "").endswith(filename):
+            raise ValueError("synthetic chunker crash")
+        return real_chunk_act(act, ref, **kwargs)
+
+    return crashing_chunk_act
+
+
+def test_dry_run_chunker_crash_is_per_file_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_act(tmp_path, COLL_FIRST, "atto-99001.md", synthetic_act(99001))
+    write_act(tmp_path, COLL_FIRST, "atto-99002.md", synthetic_act(99002))
+    monkeypatch.setattr(bootstrap_module, "chunk_act", crashing_chunk_act_for("atto-99001.md"))
+
+    report = bootstrap(dry_run=True, settings=Settings(corpus_path=tmp_path))
+
+    assert report.status == "dry-run"
+    assert report.files_processed == 1  # the healthy file is still counted
+    assert len(report.errors) == 1
+    assert report.errors[0]["file_path"] == f"{COLL_FIRST}/atto-99001.md"
+    assert "ValueError" in report.errors[0]["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +494,80 @@ def test_error_file_is_recorded_and_run_continues(
     assert run.status == "completed"
     assert run.errors == report.errors  # persisted in the run's JSONB
     assert bad_progress == []  # no checkpoint: retried on the next run
+
+
+@pytest.mark.db
+def test_chunker_crash_is_per_file_error_not_fatal(
+    tmp_path: Path, engine: Engine, qdrant: QdrantClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_act(tmp_path, COLL_FIRST, "atto-99001.md", synthetic_act(99001))
+    write_act(tmp_path, COLL_FIRST, "atto-99002.md", synthetic_act(99002))
+    write_act(tmp_path, COLL_FIRST, "atto-99003.md", synthetic_act(99003))
+    real_chunk_act = bootstrap_module.chunk_act
+    monkeypatch.setattr(bootstrap_module, "chunk_act", crashing_chunk_act_for("atto-99002.md"))
+
+    report = run_bootstrap(tmp_path, engine, qdrant)
+
+    assert report.status == "completed"  # NOT a fatal abort
+    assert report.files_processed == 2  # the other files were still indexed
+    assert len(report.errors) == 1
+    assert report.errors[0]["file_path"] == f"{COLL_FIRST}/atto-99002.md"
+    assert "ValueError" in report.errors[0]["error"]
+    with engine.connect() as conn:
+        run = conn.execute(select(ingestion_runs).where(ingestion_runs.c.id == report.run_id)).one()
+        crashed_progress = conn.execute(
+            select(ingestion_progress).where(
+                ingestion_progress.c.file_path == f"{COLL_FIRST}/atto-99002.md"
+            )
+        ).all()
+    assert run.status == "completed"
+    assert run.errors == report.errors
+    assert crashed_progress == []  # no checkpoint: retried on the next run
+
+    # Re-run with a healthy chunker: no crash loop, only the failed file is paid.
+    monkeypatch.setattr(bootstrap_module, "chunk_act", real_chunk_act)
+    report2 = run_bootstrap(tmp_path, engine, qdrant)
+    assert report2.status == "completed"
+    assert report2.files_processed == 1
+    assert report2.files_resume_skipped == 2
+
+
+class KillingEmbedder(FakeEmbedder):
+    """Raises KeyboardInterrupt mid-embed: simulates a hard kill (2nd SIGINT)."""
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        raise KeyboardInterrupt
+
+
+@pytest.mark.db
+def test_hard_kill_closes_run_as_failed_and_reraises(
+    tmp_path: Path, engine: Engine, qdrant: QdrantClient
+) -> None:
+    write_act(tmp_path, COLL_FIRST, "atto-99001.md", synthetic_act(99001))
+    write_act(tmp_path, COLL_FIRST, "atto-99002.md", synthetic_act(99002))
+
+    with engine.connect() as conn:
+        before = set(conn.execute(select(ingestion_runs.c.id)).scalars())
+    with pytest.raises(KeyboardInterrupt):  # the kill is re-raised, not swallowed
+        bootstrap(
+            settings=Settings(corpus_path=tmp_path),
+            engine=engine,
+            qdrant_client=qdrant,
+            embedder=KillingEmbedder(),
+            sparse_model=FakeSparseModel(),
+            qdrant_collection="norme_d2_test",
+            lot_size=4,  # 2 files x 2 chunks: the kill lands on the first flush
+        )
+    with engine.connect() as conn:
+        new_ids = sorted(set(conn.execute(select(ingestion_runs.c.id)).scalars()) - before)
+    engine.created_run_ids.extend(new_ids)  # type: ignore[attr-defined]
+    assert len(new_ids) == 1
+
+    with engine.connect() as conn:
+        run = conn.execute(select(ingestion_runs).where(ingestion_runs.c.id == new_ids[0])).one()
+    assert run.status == "failed"  # NEVER 'completed' on a hard kill
+    assert run.finished_at is not None
+    assert any("KeyboardInterrupt" in (e["error"] or "") for e in run.errors)
 
 
 @pytest.mark.db

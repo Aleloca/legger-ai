@@ -290,7 +290,11 @@ class _LotFlusher:
         if self._buffer:
             self._flush(len(self._buffer))
         self._release_ready()
-        assert not self._queue, "files left pending after final flush"
+        if self._queue:
+            raise RuntimeError(
+                f"{len(self._queue)} files left pending after the final flush; "
+                "the lot buffer accounting is broken"
+            )
 
     def _flush(self, n: int) -> None:
         lot = self._buffer[:n]
@@ -442,7 +446,8 @@ def bootstrap(
         with engine.begin() as conn:
             for task in tasks:
                 if task.kind == "index":
-                    assert task.act is not None and task.ref is not None
+                    if task.act is None or task.ref is None:
+                        raise RuntimeError(f"index task without act/ref: {task.file_path}")
                     upsert_act(
                         conn,
                         act_ref=task.ref.act_ref,
@@ -481,9 +486,17 @@ def bootstrap(
 
     try:
         with _SignalGuard() as guard:
-            for path in files:
+            for n, path in enumerate(files, 1):
                 if guard.received is not None:
                     raise _Interrupted(signal.Signals(guard.received).name)
+                if n > 1 and (n - 1) % 1000 == 0:  # in-flight observability
+                    logger.info(
+                        "progress: files %d/%d (%d skipped), %d chunks indexed",
+                        n - 1,
+                        len(files),
+                        report.files_skipped,
+                        flusher.chunks_indexed,
+                    )
                 rel_path = path.relative_to(settings.corpus_path).as_posix()
                 try:
                     raw = path.read_bytes()
@@ -518,11 +531,20 @@ def bootstrap(
                         [],
                     )
                     continue
+                try:
+                    chunks = chunk_act(
+                        act, ref, vigenza=vigenza, collection=collection, file_path=rel_path
+                    )
+                except Exception as exc:  # one unchunkable file must not block the corpus
+                    logger.exception("failed to chunk %s", rel_path)
+                    report.errors.append(
+                        {"file_path": rel_path, "error": f"{type(exc).__name__}: {exc}"}
+                    )
+                    continue
+                # Ownership is claimed only after chunking succeeded, so a
+                # crashed owner never dedup-blocks its duplicates.
                 owner_of[ref.act_ref] = rel_path
                 vigenza_of[ref.act_ref] = vigenza
-                chunks = chunk_act(
-                    act, ref, vigenza=vigenza, collection=collection, file_path=rel_path
-                )
                 flusher.add(
                     _FileTask(
                         rel_path,
@@ -550,11 +572,21 @@ def bootstrap(
         report.status = "failed"
         report.note = f"fatal: {type(exc).__name__}: {exc}"
         logger.exception("run #%d failed; durable files stay checkpointed", run_id)
+    except BaseException as exc:  # hard kill (2nd SIGINT, SystemExit): stay honest
+        report.status = "failed"
+        report.note = f"aborted by {type(exc).__name__}; re-run to resume"
+        logger.warning("run #%d aborted by %s", run_id, type(exc).__name__)
+        raise
     finally:
         report.chunks_indexed = flusher.chunks_indexed
         report.chunks_skipped = flusher.chunks_skipped
         report.elapsed_s = time.monotonic() - started
-        _close_run(engine, run_id, report)
+        try:
+            _close_run(engine, run_id, report)
+        except Exception:
+            # Never mask the in-flight outcome: the dangling 'running' row is
+            # cosmetic, the file-level checkpoints already carry the resume.
+            logger.exception("could not close run row #%d (status %s)", run_id, report.status)
         logger.info(
             "run #%d %s: %d processed, %d skipped (%d resume + %d dedup), "
             "%d chunks indexed (%d already present), %d errors, %.0fs",
@@ -609,8 +641,15 @@ def _dry_run(settings: Settings, files: list[Path]) -> BootstrapReport:
             report.files_dedup_skipped += 1
             stats["files_dedup_skipped"] += 1
             continue
+        try:
+            chunks = chunk_act(
+                act, ref, vigenza=vigenza, collection=collection, file_path=rel_path
+            )
+        except Exception as exc:  # mirror the real run: per-file error, keep going
+            logger.exception("failed to chunk %s", rel_path)
+            report.errors.append({"file_path": rel_path, "error": f"{type(exc).__name__}: {exc}"})
+            continue
         seen_refs.add(ref.act_ref)
-        chunks = chunk_act(act, ref, vigenza=vigenza, collection=collection, file_path=rel_path)
         chars = sum(len(chunk.text) for chunk in chunks)
         report.files_processed += 1
         report.est_chunks += len(chunks)
