@@ -305,7 +305,7 @@ Implementazioni: `BgeM3Embedder` (FlagEmbedding, device MPS su Mac, batch 32) e 
 ### Task C5: Chat CLI minimale grounded
 
 **Files:**
-- Create: `backend/legger/chat/prompts.py`, `backger/legger/chat/generate.py`, comando `legger chat`
+- Create: `backend/legger/chat/prompts.py`, `backend/legger/chat/generate.py`, comando `legger chat`
 
 **Step 1:** Verificare id modello corrente Sonnet con skill `claude-api`. System prompt in `prompts.py` con le regole ferree del design §4.4 + istruzione marker `[[act_ref|art.N|c.N]]`.
 
