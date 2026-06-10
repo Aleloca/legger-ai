@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from qdrant_client import models
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 
 from legger.db import acts
 from legger.retrieval.fastpath import ExtractedRef, extract_refs, resolve_refs
@@ -122,6 +122,24 @@ EXTRACTION_TABLE = [
     ),
     ("ho violato l'art. 18 e 7 giorni dopo", [(None, "18", None)]),
     ("tra l'art. 18 e 2000 euro", [(None, "18", None)]),
+    # the same trap after a comma: a bare prose number must not join the list
+    ("ho violato l'art. 18, 7 giorni dopo", [(None, "18", None)]),
+    ("l'art. 18, 2000 euro di multa", [(None, "18", None)]),
+    # ... while a genuine comma list (citation tail follows) still binds whole
+    (
+        "art. 18, 19 e 20 del d.lgs. 81/2008",
+        [
+            ("dlgs-81-2008", "18", None),
+            ("dlgs-81-2008", "19", None),
+            ("dlgs-81-2008", "20", None),
+        ],
+    ),
+    # multi-article comma-drop rule: with several articles the comma cannot be
+    # attributed unambiguously, so it is dropped from BOTH refs
+    (
+        "artt. 18 e 19, comma 2, c.c.",
+        [("codice-civile", "18", None), ("codice-civile", "19", None)],
+    ),
     # --- article-only (no source nearby): act_ref None, caller may bind later --
     ("cosa prevede l'articolo 18?", [(None, "18", None)]),
     ("art. 2051", [(None, "2051", None)]),
@@ -351,6 +369,56 @@ def test_resolve_estremi_ref_present_in_acts_table(engine) -> None:
         collection="norme_test",
     )
     assert [h.chunk_id for h in hits] == ["dlgs-152-2006#art-256#0"]
+
+
+def test_resolve_probe_failure_fails_open(caplog) -> None:
+    # broken engine: the acts table was never created, so the probe query
+    # raises. The probe is advisory — resolution proceeds and Qdrant decides.
+    broken = create_engine("sqlite://")
+    client = FakeQdrant([payload("dlgs-152-2006", "256")])
+    with caplog.at_level("WARNING", logger="legger.retrieval.fastpath"):
+        hits = resolve_refs(
+            [
+                ref(
+                    "dlgs-152-2006",
+                    act_type="decreto_legislativo",
+                    number="152",
+                    year=2006,
+                    article="256",
+                )
+            ],
+            engine=broken,
+            qdrant_client=client,
+            collection="norme_test",
+        )
+    assert [h.chunk_id for h in hits] == ["dlgs-152-2006#art-256#0"]
+    assert any("probe failed" in r.message for r in caplog.records)
+
+
+def test_resolve_probes_all_estremi_refs_in_one_query(engine) -> None:
+    queries: list[str] = []
+    event.listen(
+        engine, "before_cursor_execute", lambda conn, cur, stmt, *a: queries.append(stmt)
+    )
+    client = FakeQdrant([payload("dlgs-81-2008", "18"), payload("dlgs-152-2006", "256")])
+    hits = resolve_refs(
+        [
+            ref("dlgs-81-2008", act_type="decreto_legislativo", number="81", year=2008, article="18"),
+            ref(
+                "dlgs-152-2006",
+                act_type="decreto_legislativo",
+                number="152",
+                year=2006,
+                article="256",
+            ),
+            ref("dlgs-9999-2099", act_type="decreto_legislativo", number="9999", year=2099),
+        ],
+        engine=engine,
+        qdrant_client=client,
+        collection="norme_test",
+    )
+    assert len(hits) == 2
+    assert len([q for q in queries if q.lstrip().upper().startswith("SELECT")]) == 1
 
 
 def test_resolve_without_engine_goes_straight_to_qdrant() -> None:

@@ -62,9 +62,10 @@ from typing import Any
 from pydantic import BaseModel
 from qdrant_client import QdrantClient, models
 from sqlalchemy import Engine, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from legger.corpus._common import SUFFIX_ALT, SUFFIX_RANK
-from legger.corpus.refs import _KNOWN_CODICI
+from legger.corpus.refs import known_codici
 from legger.db import acts
 from legger.retrieval.search import SearchHit
 
@@ -128,7 +129,7 @@ _EXTRA_CODICI_NAMES: dict[str, str] = {
 }
 
 _CODICI_BY_NAME: dict[str, str] = {
-    **{name: _REGISTRY_ACT_REF_OVERRIDES.get(slug, slug) for name, slug in _KNOWN_CODICI},
+    **{name: _REGISTRY_ACT_REF_OVERRIDES.get(slug, slug) for name, slug in known_codici()},
     **_EXTRA_CODICI_NAMES,
 }
 
@@ -287,10 +288,20 @@ _E_CONT_GUARD = (
     rf"))"
 )
 _E_CONT = rf"(?:{_NUM_SUFFIXED}|\d+(?:\s*/\s*\d+)?{_E_CONT_GUARD})"
+# The same trap exists after a comma: "ho violato l'art. 18, 7 giorni dopo" /
+# "l'art. 18, 2000 euro di multa" must not bind the second number. A comma
+# continuation is accepted when the number satisfies the e-guard itself, OR
+# when it is followed by a further list item that does ("art. 18, 19 e 20
+# del d.lgs. ..."): the lookahead chains one level through _E_CONT, which
+# covers longer lists too because _E_CONT_GUARD accepts a trailing comma.
+_COMMA_CONT = (
+    rf"(?:{_NUM_SUFFIXED}"
+    rf"|\d+(?:\s*/\s*\d+)?(?:{_E_CONT_GUARD}|(?=\s*(?:[,;]\s*|ed?\s+){_E_CONT})))"
+)
 _ARTICLE_RE = re.compile(
     rf"(?<![{_L}])(?:"
     rf"(?:articoli|artt)\.?\s*(?P<nums_pl>{_NUM}(?:(?:\s*[,;]\s*|\s+ed?\s+){_NUM})*)"
-    rf"|(?:articolo|art)\.?\s*(?P<nums_sg>{_NUM}(?:\s*[,;]\s*{_NUM}|\s+ed?\s+{_E_CONT})*)"
+    rf"|(?:articolo|art)\.?\s*(?P<nums_sg>{_NUM}(?:\s*[,;]\s*{_COMMA_CONT}|\s+ed?\s+{_E_CONT})*)"
     rf")(?:{_COMMA_CLAUSE})?",
     re.IGNORECASE,
 )
@@ -424,6 +435,8 @@ def extract_refs(query: str) -> list[ExtractedRef]:
     used: set[int] = set()
     anchored: list[tuple[int, ExtractedRef]] = []
     for art in articles:
+        # `used` is owned by this loop: _bind only consults it (forward binds
+        # are exclusive); the add below records the claim.
         idx, trailing_comma = _bind(art, sources, used, query)
         src = None
         if idx is not None:
@@ -478,6 +491,9 @@ def extract_refs(query: str) -> list[ExtractedRef]:
 #: Max chunks returned for one article ref (an article rarely splits into
 #: more than a handful of chunks; 12 keeps pathological splits bounded).
 ARTICLE_CHUNK_CAP = 12
+#: Scroll scan bound for a single-article fetch: comfortably above any real
+#: split count, so the client-side sort sees every chunk before capping.
+_ARTICLE_SCAN_LIMIT = 64
 #: Max chunks for an act-level ref (no article): just the OPENING articles —
 #: enough to ground "what is the d.lgs. 81/2008 about", not the whole act.
 ACT_CHUNK_CAP = 5
@@ -508,13 +524,24 @@ def resolve_refs(
     when present. No vigenza filter: an explicit reference means "give me
     that act", current or not. Hits are synthetic (``score=1.0``), ordered
     by ref then by article/split order, deduplicated on chunk_id.
+
+    Error contract: the Postgres probe is advisory — a SQLAlchemy error
+    degrades to the probe-less behavior (warning logged, every estremi ref
+    goes to Qdrant, whose scroll then decides). Qdrant errors PROPAGATE,
+    deliberately: the hybrid fallback needs Qdrant anyway, so there is
+    nothing useful to degrade to here.
     """
+    known_acts: set[str] | None = None
+    if engine is not None:
+        probe = sorted({r.act_ref for r in refs if r.act_ref is not None and r.year is not None})
+        if probe:
+            known_acts = _existing_acts(engine, probe)
     hits: list[SearchHit] = []
     seen: set[str] = set()
     for ref in refs:
         if ref.act_ref is None:
             continue
-        if engine is not None and ref.year is not None and not _act_exists(engine, ref.act_ref):
+        if known_acts is not None and ref.year is not None and ref.act_ref not in known_acts:
             # NOTE: the probe assumes the Postgres `acts` table is a superset
             # of the Qdrant collection. During a PARTIAL bootstrap the table
             # may lag behind Qdrant, and this rejection converts would-be
@@ -534,10 +561,23 @@ def resolve_refs(
     return hits
 
 
-def _act_exists(engine: Engine, act_ref: str) -> bool:
-    with engine.connect() as conn:
-        stmt = select(acts.c.act_ref).where(acts.c.act_ref == act_ref)
-        return conn.execute(stmt).first() is not None
+def _existing_acts(engine: Engine, act_refs: list[str]) -> set[str] | None:
+    """One IN-clause probe for all estremi refs; ``None`` means probe unavailable.
+
+    Fails OPEN on database errors: the probe only exists to skip Qdrant
+    roundtrips for garbage slugs, so when Postgres is down the right move is
+    to let every ref through and let the Qdrant scroll decide.
+    """
+    stmt = select(acts.c.act_ref).where(acts.c.act_ref.in_(act_refs))
+    try:
+        with engine.connect() as conn:
+            return {row.act_ref for row in conn.execute(stmt)}
+    except SQLAlchemyError:
+        logger.warning(
+            "fast-path acts-table probe failed; proceeding without it (Qdrant decides)",
+            exc_info=True,
+        )
+        return None
 
 
 def _fetch_payloads(
@@ -550,7 +590,7 @@ def _fetch_payloads(
         must.append(
             models.FieldCondition(key="article", match=models.MatchValue(value=ref.article))
         )
-    scan_cap = 64 if ref.article is not None else _ACT_SCAN_LIMIT
+    scan_cap = _ARTICLE_SCAN_LIMIT if ref.article is not None else _ACT_SCAN_LIMIT
     payloads: list[dict[str, Any]] = []
     offset = None
     while len(payloads) < scan_cap:

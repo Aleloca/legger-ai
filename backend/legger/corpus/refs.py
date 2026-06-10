@@ -371,6 +371,16 @@ _GENERATIONAL_CODICI = frozenset(
 )
 
 
+def known_codici() -> tuple[tuple[str, str], ...]:
+    """Read-only view of the (normalized name, well-known slug) codici registry.
+
+    Public accessor for consumers outside the corpus parser (the retrieval
+    fast path maps these names onto corpus act_refs); names are normalized
+    like :func:`_normalize_words` output and sorted longest-first.
+    """
+    return _KNOWN_CODICI
+
+
 def _known_codice_slug(text: str) -> str | None:
     norm = _normalize_words(text)
     norm = norm.removeprefix("il ")
