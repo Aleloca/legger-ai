@@ -53,8 +53,9 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = ["-m", "not slow"]
+addopts = ["-m", "not slow and not db"]
 markers = [
     "corpus: needs the real italia-corpus checkout (skipped when missing)",
     "slow: downloads/loads real models or hits the network (run with -m slow)",
+    "db: hits the local Postgres from docker compose (run with -m db)",
 ]
