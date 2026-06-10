@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from legger.settings import Settings
+from legger.settings import _REPO_ROOT, Settings
 
 
 def test_settings_from_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,4 +33,23 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.qdrant_url == "http://localhost:6333"
     assert settings.anthropic_api_key == ""
     assert settings.voyage_api_key == ""
-    assert settings.corpus_path == Path("../italia-corpus")
+    assert settings.corpus_path == _REPO_ROOT.parent / "italia-corpus"
+
+
+def test_corpus_path_relative_resolves_against_repo_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CORPUS_PATH", "data/corpus")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.corpus_path.is_absolute()
+    assert settings.corpus_path == _REPO_ROOT / "data" / "corpus"
+
+
+def test_corpus_path_absolute_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CORPUS_PATH", "/tmp/somewhere/corpus")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.corpus_path == Path("/tmp/somewhere/corpus")
