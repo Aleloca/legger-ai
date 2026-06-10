@@ -469,3 +469,54 @@ solo il codice redazionale. Nel campione nessun file Markdown e' privo di
 intestazioni (c'e' sempre almeno la h1 del titolo), ma il parser non deve assumere
 che un atto abbia articoli: un atto senza marcatori di articolo diventa un singolo
 blocco.
+
+---
+
+# Checkpoint C6 — Benchmark embedding e GO/NO-GO (11 giugno 2026)
+
+## Benchmark retrieval (hybrid dense+BM25, RRF, k=10, 30 query su Codici — 18.463 chunk)
+
+| Embedder | recall@5 | recall@10 | MRR | explicit | natural | lay | trap |
+|---|---|---|---|---|---|---|---|
+| **voyage-4-large** | 93,3% | **96,7%** | 0,717 | 90% | 100% | 100% | 100% |
+| **voyage-4** | 83,3% | **86,7%** | 0,611 | 60% | 100% | 100% | 100% |
+| voyage-law-2 | 70,0% | 76,7% | 0,485 | 50% | 91,7% | 80% | 100% |
+| bge-m3 | n/d | n/d | n/d | — | — | — | — |
+
+Report JSON in `backend/eval/results/`. Note:
+
+- **voyage-law-2** (modello "legale", generazione precedente) perde nettamente dai
+  modelli generali voyage-4: scartato.
+- **bge-m3** non valutato: inferenza inaffidabile su questo Mac Intel (MPS si blocca
+  nei processi detached anche con `LEGGER_EMBED_DEVICE` e `max_length=4096`; CPU
+  stalla sui lotti con chunk lunghi). Da ri-benchmarkare eventualmente sul VPS Linux
+  (torch moderno, niente Rosetta) se il self-hosting diventa interessante.
+- Le differenze tra voyage-4-large e voyage-4 sono interamente sulle query con
+  **estremi espliciti** ("art. 2051 c.c."), che il fast path E1 risolverà con lookup
+  deterministico bypassando il vettoriale. Sulle query semantiche (natural/lay/trap)
+  entrambi fanno 100%.
+- q04 ("art. 274 c.p.p.") oscilla al confine del top-10 tra run (non determinismo
+  HNSW): il 96,7% di voyage-4-large è in realtà 96,7–100%.
+
+## Stima bootstrap corpus completo (dry-run 11/6/2026, commit corpus a380de55)
+
+- **181.870 file** da indicizzare; 106.042 duplicati cross-collezione saltati (dedup
+  per act_ref); **0 errori di parsing sull'intero corpus**.
+- **966.822 chunk**, ~1,18 mld caratteri ≈ **~524M token** (ratio misurato 2,26 char/token).
+- Costo embedding oltre i 200M token gratuiti Voyage (324M a pagamento):
+  voyage-4-large ≈ **39 $** · voyage-4 ≈ **19,5 $** · voyage-4-lite ≈ 6,5 $ ·
+  bge-m3 self-hosted gratis ma ~27–54 h di CPU.
+- Tempo stimato (API-bound, ~20–75 chunk/s osservati): ~4–13 h, ripartibile
+  (resume a livello di file e di lotto).
+
+## Verdetto: **GO**
+
+Criteri del piano (§Fase 0): recall@10 ≥ 85% ✅ (due embedder lo superano, il
+migliore al 96,7%) · stima fondata di chunk e costi ✅ · fast path estremi: rinviato
+a E1 (lookup deterministico Postgres+regex, prossimo task; le query esplicite
+mancate dal vettoriale sono esattamente il suo caso d'uso). Validazione qualitativa
+end-to-end: chat CLI grounded 14/14 PASS (trascritto in `docs/c5-chat-transcript.md`),
+zero marker malformati, zero estremi inventati, trappole gestite.
+
+**Decisione embedder produzione**: rinviata alla scelta di budget (4-large massimizza
+la robustezza, 4 costa la metà con pari resa semantica + fast path davanti).
