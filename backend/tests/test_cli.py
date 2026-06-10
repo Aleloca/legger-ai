@@ -16,12 +16,28 @@ def test_help_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.code == 0
 
 
-@pytest.mark.parametrize("command", ["ingest", "chat"])
+@pytest.mark.parametrize("command", ["ingest"])
 def test_stub_commands_exit_nonzero(monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     monkeypatch.setattr("sys.argv", ["legger", command])
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
     assert exc_info.value.code == 1
+
+
+def test_chat_requires_api_key(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    """`legger chat` fails fast with a clear message when the key is missing."""
+    import legger.settings as settings_mod
+
+    class NoKeySettings:
+        anthropic_api_key = ""
+        qdrant_url = "http://localhost:6333"
+
+    monkeypatch.setattr(settings_mod, "Settings", lambda: NoKeySettings())
+    monkeypatch.setattr("sys.argv", ["legger", "chat"])
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+    assert exc_info.value.code == 1
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().out
 
 
 def test_eval_requires_collection_and_embedder(monkeypatch: pytest.MonkeyPatch) -> None:
