@@ -352,7 +352,7 @@ quasi tutta la dimensione su disco. Il contenuto utile termina al primo NUL.
 
 Le collezioni si sovrappongono, ma MOLTO meno di quanto suggeriscano i soli nomi: 95492 filename (su 190739 unici, 287912 file totali) compaiono in 2+ collezioni, ma solo 6303 coppie (filename, dimensione) coincidono.
 
-- **95492 collisioni di nome**: in larga parte atti DIVERSI che condividono il titolo sanificato. Es. `Modificazioni delle aliquote dellimposta di fabbricazione su alcuni prodotti petroliferi.md` compare in 5 collezioni ma sono 5 decreti distinti (dimensioni tutte diverse): il filename NON identifica l'atto.
+- **95492 collisioni di nome**: in larga parte atti DIVERSI che condividono il titolo sanificato. Es. `Modificazioni delle aliquote dellimposta di fabbricazione su alcuni prodotti petroliferi.md` compare in 5 collezioni: 4 atti distinti più una copia identica — le dimensioni non coincidono tra 4 dei 5 file. Il nome file, da solo, non identifica l'atto.
 - **~6303 duplicati plausibili** (stesso nome E stessa dimensione in 2+ collezioni): lo stesso atto archiviato in piu' collezioni. La conferma definitiva richiederebbe un hash del contenuto; la dimensione identica e' un proxy conservativo.
 
 Esempi di duplicati stesso-nome-stessa-dimensione (i piu' grandi):

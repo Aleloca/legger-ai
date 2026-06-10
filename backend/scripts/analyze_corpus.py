@@ -517,8 +517,9 @@ def report() -> None:
     print(
         f"- **{dup_names} collisioni di nome**: in larga parte atti DIVERSI che condividono il "
         "titolo sanificato. Es. `Modificazioni delle aliquote dellimposta di fabbricazione su "
-        "alcuni prodotti petroliferi.md` compare in 5 collezioni ma sono 5 decreti distinti "
-        "(dimensioni tutte diverse): il filename NON identifica l'atto."
+        "alcuni prodotti petroliferi.md` compare in 5 collezioni: 4 atti distinti più una copia "
+        "identica — le dimensioni non coincidono tra 4 dei 5 file. Il nome file, da solo, non "
+        "identifica l'atto."
     )
     print(
         f"- **~{dup_pairs} duplicati plausibili** (stesso nome E stessa dimensione in 2+ "
