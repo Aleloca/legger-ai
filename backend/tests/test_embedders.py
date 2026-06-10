@@ -145,6 +145,23 @@ def test_voyage_custom_model_and_batch() -> None:
     assert [len(call["texts"]) for call in fake.calls] == [2, 1]
 
 
+def test_voyage_client_built_with_max_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The SDK defaults max_retries to 0; the embedder must enable retries."""
+    import voyageai
+
+    captured: dict[str, Any] = {}
+
+    def fake_client(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(voyageai, "Client", fake_client)
+    embedder = VoyageEmbedder(api_key="pa-test")
+    embedder._get_client()
+    assert captured["max_retries"] == 5
+    assert captured["api_key"] == "pa-test"
+
+
 # --- integration (real model, run with: uv run pytest -m slow) ---
 
 
@@ -162,6 +179,9 @@ def test_bge_m3_live_italian_legal_texts() -> None:
         "L'imposta sul valore aggiunto si applica sulle cessioni di beni e sulle "
         "prestazioni di servizi effettuate nel territorio dello Stato nell'esercizio "
         "di imprese o di arti e professioni.",
+        # > 8k chars: must be truncated to the model window, not raise (the
+        # chunker caps text at 8000 chars, close to bge-m3's 8192-token limit).
+        "Le disposizioni del presente articolo si applicano a tutti i contratti. " * 120,
     ]
     query = "Che cosa si intende per contratto tra le parti?"
 
@@ -169,7 +189,8 @@ def test_bge_m3_live_italian_legal_texts() -> None:
     doc_vecs = embedder.embed_documents(documents)
     query_vec = embedder.embed_query(query)
 
-    assert len(doc_vecs) == 3
+    assert len(documents[3]) > 8000
+    assert len(doc_vecs) == 4
     assert all(len(v) == embedder.dim for v in doc_vecs)
     assert len(query_vec) == embedder.dim
 

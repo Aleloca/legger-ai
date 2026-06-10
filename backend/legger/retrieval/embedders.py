@@ -152,6 +152,12 @@ class VoyageEmbedder:
     The API key is validated at construction (fail fast, before any long
     indexing run); the network client itself is created lazily. Retries on
     rate limits use the SDK's built-in exponential backoff (tenacity).
+
+    Caller contract: ``embed_documents`` makes one API call per internal
+    batch but returns nothing until ALL batches succeed — a failed call
+    discards every batch within that call. Callers indexing large corpora
+    must therefore embed in upsert-sized slices (so a failure loses only the
+    current slice, and the run stays resumable by re-upserting that slice).
     """
 
     def __init__(
