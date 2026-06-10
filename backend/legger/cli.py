@@ -29,6 +29,11 @@ def main() -> None:
         action="store_true",
         help="Drop and recreate the Qdrant collection before indexing",
     )
+    index.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Force full re-embedding (default: skip lots already in Qdrant)",
+    )
 
     subparsers.add_parser("ingest", help="Ingest the corpus (not implemented yet)")
     subparsers.add_parser("eval", help="Run retrieval evaluation (not implemented yet)")
@@ -61,9 +66,11 @@ def _run_index(args: argparse.Namespace) -> None:
         args.embedder,
         suffix=args.qdrant_collection_suffix,
         recreate=args.recreate,
+        resume=not args.no_resume,
     )
     print(
-        f"\nIndexed {report.chunks_indexed} chunks from "
+        f"\nIndexed {report.chunks_indexed} chunks "
+        f"({report.chunks_skipped} skipped, already indexed) from "
         f"{report.files_indexed}/{report.files_total} files into "
         f"'{report.qdrant_collection}' in {report.elapsed_s:.0f}s."
     )

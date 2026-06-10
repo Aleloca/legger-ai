@@ -18,9 +18,13 @@ Schema (per collection)
 
 Point ids are ``uuid5(NAMESPACE_URL, chunk.id)``: deterministic, so re-running
 the indexer overwrites the same points (idempotent upserts) and a crashed run
-is recoverable with a plain re-run. The human-readable chunk id is kept in the
-payload as ``chunk_id``; the payload also carries ``text`` verbatim — that is
-what the LLM receives as context at retrieval time.
+is recoverable with a plain re-run. On a re-run the indexer *resumes* at lot
+granularity: a lot whose point ids are all already present in Qdrant is
+skipped (no embed call, no upsert), so an interrupted run only re-pays the
+incomplete lot. ``--no-resume`` forces full re-embedding. The human-readable
+chunk id is kept in the payload as ``chunk_id``; the payload also carries
+``text`` verbatim — that is what the LLM receives as context at retrieval
+time.
 
 Failure contract
 ================
@@ -28,8 +32,8 @@ Failure contract
   the report lists them (index integrity over completeness of a single run).
 - A failed embed call loses only the current upsert lot (see the
   VoyageEmbedder caller contract): the lot is retried once, then the run
-  aborts cleanly — already-upserted lots are durable and a re-run re-embeds
-  only at the cost of time, never of correctness.
+  aborts cleanly — already-upserted lots are durable and a re-run skips them
+  (lot-level resume), re-embedding only what is missing.
 """
 
 from __future__ import annotations
@@ -161,6 +165,7 @@ class IndexReport:
     files_total: int = 0
     files_indexed: int = 0
     chunks_indexed: int = 0
+    chunks_skipped: int = 0
     elapsed_s: float = 0.0
     file_errors: list[tuple[str, str]] = field(default_factory=list)  # (rel_path, error)
 
@@ -217,6 +222,21 @@ def _embed_lot_with_retry(embedder: Embedder, texts: list[str], lot_no: int) -> 
         ) from exc
 
 
+def _lot_already_indexed(client: QdrantClient, collection_name: str, ids: list[str]) -> bool:
+    """True iff *all* ``ids`` already exist as points in the collection.
+
+    Partial presence (an interrupted upsert) returns False so the lot is
+    re-embedded and overwritten — idempotent point ids make that safe.
+    """
+    records = client.retrieve(
+        collection_name=collection_name,
+        ids=ids,
+        with_payload=False,
+        with_vectors=False,
+    )
+    return len(records) == len(ids)
+
+
 def index_chunks(
     client: QdrantClient,
     collection_name: str,
@@ -225,20 +245,32 @@ def index_chunks(
     sparse_model: SparseTextEmbedding,
     *,
     lot_size: int = LOT_SIZE,
-) -> int:
-    """Embed (dense + sparse) and upsert ``chunks`` in lots; returns the count."""
+    resume: bool = True,
+) -> tuple[int, int]:
+    """Embed (dense + sparse) and upsert ``chunks`` in lots.
+
+    With ``resume`` (the default) a lot whose point ids are all already in
+    Qdrant is skipped — no embed call, no upsert. Returns
+    ``(chunks_indexed, chunks_skipped)``.
+    """
     total = len(chunks)
     lots = (total + lot_size - 1) // lot_size
     done = 0
+    skipped = 0
     started = time.monotonic()
     for lot_no, start in enumerate(range(0, total, lot_size), start=1):
         lot = chunks[start : start + lot_size]
+        ids = [point_id(chunk.id) for chunk in lot]
+        if resume and _lot_already_indexed(client, collection_name, ids):
+            skipped += len(lot)
+            logger.info("lot %d/%d SKIPPED (already indexed)", lot_no, lots)
+            continue
         texts = [chunk.text for chunk in lot]
         dense = _embed_lot_with_retry(embedder, texts, lot_no)
         sparse = list(sparse_model.embed(texts))
         points = [
             models.PointStruct(
-                id=point_id(chunk.id),
+                id=pid,
                 vector={
                     DENSE_VECTOR: dense_vec,
                     SPARSE_VECTOR: models.SparseVector(
@@ -248,7 +280,7 @@ def index_chunks(
                 },
                 payload=chunk_payload(chunk),
             )
-            for chunk, dense_vec, sparse_vec in zip(lot, dense, sparse, strict=True)
+            for pid, chunk, dense_vec, sparse_vec in zip(ids, lot, dense, sparse, strict=True)
         ]
         client.upsert(collection_name=collection_name, points=points, wait=True)
         done += len(lot)
@@ -256,7 +288,7 @@ def index_chunks(
         logger.info(
             "lot %d/%d upserted — %d/%d chunks (%.1f chunks/s)", lot_no, lots, done, total, rate
         )
-    return done
+    return done, skipped
 
 
 def index_collection(
@@ -267,6 +299,7 @@ def index_collection(
     suffix: str | None = None,
     recreate: bool = False,
     lot_size: int = LOT_SIZE,
+    resume: bool = True,
 ) -> IndexReport:
     """Index one corpus collection into ``norme_{embedder_slug}`` on Qdrant."""
     settings = settings or Settings()
@@ -286,8 +319,14 @@ def index_collection(
 
     client = QdrantClient(url=settings.qdrant_url)
     ensure_collection(client, collection_name, embedder.dim, recreate=recreate)
-    report.chunks_indexed = index_chunks(
-        client, collection_name, chunks, embedder, _get_sparse_model(), lot_size=lot_size
+    report.chunks_indexed, report.chunks_skipped = index_chunks(
+        client,
+        collection_name,
+        chunks,
+        embedder,
+        _get_sparse_model(),
+        lot_size=lot_size,
+        resume=resume,
     )
     report.elapsed_s = time.monotonic() - started
     return report

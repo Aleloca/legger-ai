@@ -6,6 +6,7 @@ payload completeness, collection schema calls and the lot retry contract.
 """
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -45,14 +46,19 @@ def make_chunk(i: int = 0) -> Chunk:
 
 
 class FakeQdrant:
-    """Records calls; configurable existence."""
+    """Records calls; configurable existence and pre-existing point ids."""
 
-    def __init__(self, exists: bool = False) -> None:
+    def __init__(self, exists: bool = False, existing_ids: set[str] | None = None) -> None:
         self._exists = exists
+        self.existing_ids = existing_ids or set()
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def collection_exists(self, name: str) -> bool:
         return self._exists
+
+    def retrieve(self, **kwargs: Any) -> list[Any]:
+        self.calls.append(("retrieve", kwargs))
+        return [SimpleNamespace(id=pid) for pid in kwargs["ids"] if pid in self.existing_ids]
 
     def create_collection(self, **kwargs: Any) -> None:
         self.calls.append(("create_collection", kwargs))
@@ -180,9 +186,10 @@ def test_index_chunks_upserts_points_in_lots() -> None:
     chunks = [make_chunk(i) for i in range(5)]
     embedder = FakeEmbedder()
 
-    count = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+    count, skipped = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
 
     assert count == 5
+    assert skipped == 0
     upserts = client.named("upsert")
     assert [len(up["points"]) for up in upserts] == [2, 2, 1]
     assert all(up["wait"] is True for up in upserts)
@@ -200,9 +207,10 @@ def test_index_chunks_retries_failed_lot_once() -> None:
     chunks = [make_chunk(i) for i in range(3)]
     embedder = FakeEmbedder(fail_times=1)
 
-    count = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+    count, skipped = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
 
     assert count == 3
+    assert skipped == 0
     # First lot embedded twice (failure + retry), second lot once.
     assert [len(texts) for texts in embedder.calls] == [2, 2, 1]
     assert len(client.named("upsert")) == 2
@@ -216,3 +224,63 @@ def test_index_chunks_aborts_after_second_failure() -> None:
     with pytest.raises(RuntimeError, match="re-run"):
         index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
     assert client.named("upsert") == []  # nothing upserted for the failed lot
+
+
+# --- lot-level resume ---
+
+
+def test_index_chunks_skips_fully_indexed_lot() -> None:
+    chunks = [make_chunk(i) for i in range(4)]
+    # First lot (chunks 0-1) fully present in Qdrant; second lot absent.
+    client = FakeQdrant(existing_ids={point_id(chunks[0].id), point_id(chunks[1].id)})
+    embedder = FakeEmbedder()
+
+    count, skipped = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+
+    assert count == 2
+    assert skipped == 2
+    # The skipped lot was never embedded nor upserted.
+    assert embedder.calls == [[chunks[2].text, chunks[3].text]]
+    [upsert] = client.named("upsert")
+    assert [p.id for p in upsert["points"]] == [point_id(chunks[2].id), point_id(chunks[3].id)]
+    # Presence checks are payload/vector-free.
+    retrieves = client.named("retrieve")
+    assert len(retrieves) == 2
+    assert all(r["with_payload"] is False and r["with_vectors"] is False for r in retrieves)
+
+
+def test_index_chunks_processes_partially_indexed_lot() -> None:
+    chunks = [make_chunk(i) for i in range(2)]
+    # Only one of the lot's two points exists: interrupted upsert -> overwrite.
+    client = FakeQdrant(existing_ids={point_id(chunks[0].id)})
+    embedder = FakeEmbedder()
+
+    count, skipped = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+
+    assert count == 2
+    assert skipped == 0
+    assert embedder.calls == [[chunks[0].text, chunks[1].text]]
+    assert len(client.named("upsert")) == 1
+
+
+def test_index_chunks_no_resume_reembeds_everything() -> None:
+    chunks = [make_chunk(i) for i in range(4)]
+    # Everything already present, but resume is off: full re-embedding.
+    client = FakeQdrant(existing_ids={point_id(c.id) for c in chunks})
+    embedder = FakeEmbedder()
+
+    count, skipped = index_chunks(
+        client,  # type: ignore[arg-type]
+        "norme_test",
+        chunks,
+        embedder,
+        FakeSparse(),
+        lot_size=2,
+        resume=False,
+    )
+
+    assert count == 4
+    assert skipped == 0
+    assert client.named("retrieve") == []  # no presence checks at all
+    assert len(embedder.calls) == 2
+    assert len(client.named("upsert")) == 2
