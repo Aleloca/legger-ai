@@ -4,6 +4,7 @@ from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import CheckConstraint, Engine, select
+from sqlalchemy.exc import IntegrityError
 
 from legger.db import (
     acts,
@@ -11,6 +12,7 @@ from legger.db import (
     ingestion_progress,
     ingestion_runs,
     metadata,
+    set_vigenza,
     upsert_act,
     upsert_progress,
 )
@@ -127,8 +129,37 @@ def test_upsert_act_insert_then_update(engine: Engine) -> None:
 
 
 @pytest.mark.db
+def test_set_vigenza_partial_update(engine: Engine) -> None:
+    upsert_act(
+        engine,
+        act_ref=_ACT_REF,
+        act_type="legge",
+        collection="Test",
+        vigenza="vigente",
+        file_path=_FILE_PATH,
+        title="Atto di prova",
+        number="1",
+        year=2026,
+    )
+
+    rowcount = set_vigenza(engine, _ACT_REF, "abrogato", last_commit_sha="cafebabe")
+    assert rowcount == 1
+
+    with engine.connect() as conn:
+        row = conn.execute(select(acts).where(acts.c.act_ref == _ACT_REF)).one()
+    assert row.vigenza == "abrogato"  # flipped
+    assert row.title == "Atto di prova"  # intact, unlike upsert_act
+    assert row.number == "1"
+    assert row.year == 2026
+    assert row.last_commit_sha == "cafebabe"
+    assert row.last_updated is not None
+
+    assert set_vigenza(engine, "test:db:does-not-exist", "vigente") == 0
+
+
+@pytest.mark.db
 def test_acts_vigenza_check_constraint(engine: Engine) -> None:
-    with pytest.raises(Exception, match="ck_acts_vigenza"):
+    with pytest.raises(IntegrityError, match="ck_acts_vigenza"):
         upsert_act(
             engine,
             act_ref=_ACT_REF,

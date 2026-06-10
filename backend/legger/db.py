@@ -9,7 +9,7 @@ Plain Core, no ORM: D2/D3 issue bulk upserts and the API (F1) does simple
 selects, so sessions would be dead weight.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -113,12 +113,22 @@ def upsert_act(
     last_updated: datetime | None = None,
     number: str | None = None,
     year: int | None = None,
-    date_pub: str | None = None,
+    date_pub: date | str | None = None,
     source: str | None = None,
 ) -> None:
     """INSERT the act or, on act_ref conflict, UPDATE every other column.
 
+    .. warning::
+        Full-row replace: omitted optional fields overwrite existing values
+        with NULL. Not for partial updates — use :func:`set_vigenza` for
+        vigenza flips.
+
     ``last_updated`` defaults to ``now()`` server-side when omitted.
+    ``date_pub`` also accepts an ISO date string (``"2026-01-01"``) for
+    convenience; psycopg adapts it to a ``date``.
+
+    Note: for batching, ``pg_insert(acts).values([...])`` accepts a list of
+    row dicts if D2 needs it.
     """
     values: dict[str, object] = {
         "act_ref": act_ref,
@@ -140,6 +150,32 @@ def upsert_act(
         set_={name: stmt.excluded[name] for name in values if name != "act_ref"},
     )
     _execute(bind, stmt)
+
+
+def set_vigenza(
+    bind: Engine | Connection,
+    act_ref: str,
+    vigenza: str,
+    *,
+    last_commit_sha: str | None = None,
+) -> int:
+    """Partial UPDATE of an act's vigenza (and optionally last_commit_sha).
+
+    Unlike :func:`upsert_act` (full-row replace), this touches only
+    ``vigenza``, ``last_updated`` (set to ``now()``) and — when given —
+    ``last_commit_sha``; every other column is left intact.
+
+    Returns the number of rows updated (0 if *act_ref* is unknown), so D3
+    can detect acts missing from Postgres.
+    """
+    values: dict[str, object] = {"vigenza": vigenza, "last_updated": func.now()}
+    if last_commit_sha is not None:
+        values["last_commit_sha"] = last_commit_sha
+    stmt = acts.update().where(acts.c.act_ref == act_ref).values(**values)
+    if isinstance(bind, Engine):
+        with bind.begin() as conn:
+            return conn.execute(stmt).rowcount
+    return bind.execute(stmt).rowcount
 
 
 def upsert_progress(
