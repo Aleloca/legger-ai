@@ -16,6 +16,13 @@ from Qdrant by payload filter. This module provides the two halves:
 Grammar decisions (the test table in ``tests/test_fastpath.py`` is the
 contract):
 
+- **Short abbreviations require a bound article**: the SHORT dotted forms
+  (c.c., c.p., c.p.c., c.p.p., c.d.s., cds — ≤ ~6 chars) collide with
+  everyday abbreviations ("c.c." conto corrente, "c.p." casella postale,
+  "CdS" Consiglio di Stato), so they emit a ref ONLY when an article is
+  adjacent ("art. 2051 c.c."); bare they are ignored. FULL names ("codice
+  civile", "codice della strada") are unambiguous in prose and may still
+  emit act-level refs without an article.
 - **Codici abbreviations** map to the act_refs ACTUALLY in the corpus, not
   to registry slugs that never fire: the c.p.p. is generational so its
   act_ref is the carrier ``dpr-447-1988``; the CdS (dlgs 285/1992) is
@@ -47,6 +54,7 @@ contract):
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -63,6 +71,8 @@ from legger.retrieval.search import SearchHit
 # Letters as seen by the boundary guards (plain + accented lowercase; the
 # regexes run with IGNORECASE so the uppercase variants are covered too).
 _L = "a-zà-ù"
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractedRef(BaseModel):
@@ -124,20 +134,24 @@ _CODICI_BY_NAME: dict[str, str] = {
 
 # Dotted abbreviations, longest-first so "c.p.c." never half-matches as
 # "c.p.". The final dot is optional (end-of-message citations); the dotless
-# short forms are deliberately NOT supported except "cds" (explicitly common
-# and unambiguous), see the module docstring.
-_ABBREVIATIONS: tuple[tuple[str, str], ...] = (
-    (r"c\.\s*p\.\s*c\.?", "codice-procedura-civile"),
-    (r"c\.\s*p\.\s*p\.?", "dpr-447-1988"),
-    (r"c\.\s*d\.\s*s\.?", "dlgs-285-1992"),
-    (r"cds", "dlgs-285-1992"),
-    (r"cod\.\s*proc\.\s*civ\.?", "codice-procedura-civile"),
-    (r"cod\.\s*proc\.\s*pen\.?", "dpr-447-1988"),
-    (r"cod\.\s*civ\.?", "codice-civile"),
-    (r"cod\.\s*pen\.?", "codice-penale"),
-    (r"cod\.\s*nav\.?", "rd-327-1942"),
-    (r"c\.\s*c\.?", "codice-civile"),
-    (r"c\.\s*p\.?", "codice-penale"),
+# short forms are deliberately NOT supported except "cds" (common in traffic
+# questions — but like all SHORT forms it is ambiguous on its own: "il CdS"
+# is usually the Consiglio di Stato). The third field is `requires_article`:
+# short forms (≤ ~6 chars) collide with everyday abbreviations ("c.c." conto
+# corrente, "c.p." casella postale) and act as a source ONLY when an article
+# binds to them; the spelled-out `cod. xxx` forms stand on their own.
+_ABBREVIATIONS: tuple[tuple[str, str, bool], ...] = (
+    (r"c\.\s*p\.\s*c\.?", "codice-procedura-civile", True),
+    (r"c\.\s*p\.\s*p\.?", "dpr-447-1988", True),
+    (r"c\.\s*d\.\s*s\.?", "dlgs-285-1992", True),
+    (r"cds", "dlgs-285-1992", True),
+    (r"cod\.\s*proc\.\s*civ\.?", "codice-procedura-civile", False),
+    (r"cod\.\s*proc\.\s*pen\.?", "dpr-447-1988", False),
+    (r"cod\.\s*civ\.?", "codice-civile", False),
+    (r"cod\.\s*pen\.?", "codice-penale", False),
+    (r"cod\.\s*nav\.?", "rd-327-1942", False),
+    (r"c\.\s*c\.?", "codice-civile", True),
+    (r"c\.\s*p\.?", "codice-penale", True),
 )
 
 _ACCENT_CLASS = {"a": "[aàá]", "e": "[eèé]", "i": "[iìí]", "o": "[oòó]", "u": "[uùú]"}
@@ -166,16 +180,25 @@ def _compile(pattern: str, *, guard: str = "") -> re.Pattern[str]:
     return re.compile(rf"(?<![{_L}.])(?:{pattern})(?![{_L}]){guard}", re.IGNORECASE)
 
 
+# A codice name followed by a nationality adjective is a FOREIGN code
+# ("art. 242 del codice civile tedesco" is the BGB): not in the corpus,
+# do not extract.
+_NATIONALITY_GUARD = (
+    rf"(?!\s+(?:tedesc|frances|svizzer|austriac|spagnol|europe|ingles|"
+    rf"american|statunitens|olandes|portoghes|belg|grec)[{_L}]*)"
+)
+
 # Longest name first: "codice penale militare di pace" must shadow "codice
 # penale", "nuovo codice della strada" must shadow "codice della strada".
-_CODICE_NAME_MATCHERS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
-    (_compile(_name_pattern(name)), act_ref)
+# Full names are unambiguous in prose: requires_article=False.
+_CODICE_NAME_MATCHERS: tuple[tuple[re.Pattern[str], str, bool], ...] = tuple(
+    (_compile(_name_pattern(name), guard=_NATIONALITY_GUARD), act_ref, False)
     for name, act_ref in sorted(_CODICI_BY_NAME.items(), key=lambda kv: len(kv[0]), reverse=True)
 )
 
-_ABBREVIATION_MATCHERS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
-    (_compile(pattern, guard=_NO_ABBREV_CONTINUATION), act_ref)
-    for pattern, act_ref in _ABBREVIATIONS
+_ABBREVIATION_MATCHERS: tuple[tuple[re.Pattern[str], str, bool], ...] = tuple(
+    (_compile(pattern, guard=_NO_ABBREV_CONTINUATION), act_ref, requires_article)
+    for pattern, act_ref, requires_article in _ABBREVIATIONS
 )
 
 # Recognized but NOT in the corpus (the "Leggi costituzionali" collection
@@ -199,7 +222,10 @@ _ESTREMI_TYPES: dict[str, tuple[str, str]] = {
 # The tipo token must be IMMEDIATELY followed by numero+anno ("81/2008",
 # "n. 81 del 2008"): "il decreto legislativo è una fonte..." never fires.
 # `d.l.` carries a (?!gs) guard so it can never eat the head of "d.lgs.";
-# the year is 4-digit by design (precision: "90/2000" decades, "81/08").
+# `l.` carries lookbehinds rejecting a letter-dot prefix, so the tail of a
+# longer abbreviation never reads as legge ("s.r.l. 104/2020" is a company,
+# mirror of _NO_ABBREV_CONTINUATION); the year is 4-digit by design
+# (precision: "90/2000" decades, "81/08").
 _ESTREMI_RE = re.compile(
     rf"(?<![{_L}])"
     rf"(?:"
@@ -209,7 +235,7 @@ _ESTREMI_RE = re.compile(
     rf"|decreto\s+del\s+presidente\s+della\s+repubblica(?![{_L}]))"
     rf"|(?P<dl>d\.\s*l\.(?!\s*gs)|dl\.?(?![{_L}])|decreto[\s\-]+legge(?![{_L}]))"
     rf"|(?P<rd>r\.\s*d\.?(?![{_L}])|rd(?![{_L}])|regio\s+decreto(?![{_L}]))"
-    rf"|(?P<legge>legge(?![{_L}])|l\.)"
+    rf"|(?P<legge>legge(?![{_L}])|(?<![{_L}]\.)(?<![{_L}]\.\s)l\.)"
     rf")"
     rf"\s*,?\s*(?:n\.?|n°|num\.?|numero)?\s*"
     rf"(?P<num>\d{{1,4}}(?:[\s\-](?:{SUFFIX_ALT})(?![{_L}]))?)"
@@ -245,10 +271,27 @@ _COMMA_CLAUSE = (
     rf"|(?P<ordinale>{'|'.join(_ORDINALI)})\s+comma(?![{_L}])"
     rf")"
 )
+# "e <num>" list continuations are greedy traps after a SINGULAR keyword:
+# "art. 18 e 7 giorni dopo" / "tra l'art. 18 e 2000 euro" must not bind the
+# second number. A plural keyword ("artt.", "articoli") announces a list, so
+# the continuation is always accepted; after singular "art." the continuation
+# number must look like a citation tail — carry a latin suffix ("e 2-bis"),
+# or be followed by a connective/comma/codice token or end punctuation
+# ("artt. 2043 e 2051 c.c.", "art. 16 e 17 del d.lgs. ...", "... e 2051?").
+_NUM_SUFFIXED = rf"\d+(?:\s*/\s*\d+)?[\s.\-]+(?:{SUFFIX_ALT})(?![{_L}])"
+_E_CONT_GUARD = (
+    rf"(?=\s*(?:$|[,;.:)\]?!»\"']"
+    rf"|(?:del|dello|della|dei|delle|degli|di|al|allo|alla|ai|nel|nella)(?![{_L}])"
+    rf"|(?:d|all|dell|nell)['’]"
+    rf"|comm[ai](?![{_L}])|co\.|c\.|cod\.|codice(?![{_L}])"
+    rf"))"
+)
+_E_CONT = rf"(?:{_NUM_SUFFIXED}|\d+(?:\s*/\s*\d+)?{_E_CONT_GUARD})"
 _ARTICLE_RE = re.compile(
-    rf"(?<![{_L}])(?:articol[oi]|artt|art)\.?\s*"
-    rf"(?P<nums>{_NUM}(?:(?:\s*[,;]\s*|\s+ed?\s+){_NUM})*)"
-    rf"(?:{_COMMA_CLAUSE})?",
+    rf"(?<![{_L}])(?:"
+    rf"(?:articoli|artt)\.?\s*(?P<nums_pl>{_NUM}(?:(?:\s*[,;]\s*|\s+ed?\s+){_NUM})*)"
+    rf"|(?:articolo|art)\.?\s*(?P<nums_sg>{_NUM}(?:\s*[,;]\s*{_NUM}|\s+ed?\s+{_E_CONT})*)"
+    rf")(?:{_COMMA_CLAUSE})?",
     re.IGNORECASE,
 )
 _NUM_LIST_SEP = re.compile(r"\s*[,;]\s*|\s+ed?\s+", re.IGNORECASE)
@@ -290,6 +333,7 @@ class _Source:
     number: str | None = None
     year: int | None = None
     drop: bool = False  # recognized but unresolvable (Costituzione)
+    requires_article: bool = False  # short abbreviation: no act-level ref
 
 
 @dataclass(frozen=True)
@@ -303,7 +347,8 @@ class _ArticleMatch:
 def _find_articles(query: str) -> list[_ArticleMatch]:
     found = []
     for m in _ARTICLE_RE.finditer(query):
-        numbers = tuple(_norm_number(part) for part in _NUM_LIST_SEP.split(m.group("nums")) if part)
+        nums = m.group("nums_pl") or m.group("nums_sg")
+        numbers = tuple(_norm_number(part) for part in _NUM_LIST_SEP.split(nums) if part)
         comma = _norm_number(m.group("comma")) if m.group("comma") else None
         if comma is None and m.group("ordinale"):
             comma = _ORDINALI[m.group("ordinale").lower()]
@@ -322,9 +367,10 @@ def _find_sources(query: str) -> list[_Source]:
             _Source(m.start(), m.end(), f"{prefix}-{number}-{year}", act_type, number, year)
         )
     for matchers in (_ABBREVIATION_MATCHERS, _CODICE_NAME_MATCHERS):
-        for pattern, act_ref in matchers:
+        for pattern, act_ref, requires_article in matchers:
             candidates.extend(
-                _Source(m.start(), m.end(), act_ref, "codice") for m in pattern.finditer(query)
+                _Source(m.start(), m.end(), act_ref, "codice", requires_article=requires_article)
+                for m in pattern.finditer(query)
             )
     candidates.extend(
         _Source(m.start(), m.end(), None, drop=True) for m in _COSTITUZIONE_RE.finditer(query)
@@ -401,7 +447,10 @@ def extract_refs(query: str) -> list[ExtractedRef]:
                 )
             )
     for i, src in enumerate(sources):
-        if i in used or src.drop:
+        if i in used or src.drop or src.requires_article:
+            # requires_article: a bare short abbreviation ("ho un c.c. presso
+            # la banca") is everyday language, not a citation — only an
+            # adjacent article makes it one.
             continue
         anchored.append(
             (
@@ -466,6 +515,15 @@ def resolve_refs(
         if ref.act_ref is None:
             continue
         if engine is not None and ref.year is not None and not _act_exists(engine, ref.act_ref):
+            # NOTE: the probe assumes the Postgres `acts` table is a superset
+            # of the Qdrant collection. During a PARTIAL bootstrap the table
+            # may lag behind Qdrant, and this rejection converts would-be
+            # fast-path hits into hybrid fallbacks (observed live with
+            # dlgs-152-2006); the debug line makes the skew visible.
+            logger.debug(
+                "fast-path probe rejected %s: not in acts table (may still exist in Qdrant)",
+                ref.act_ref,
+            )
             continue
         for payload in _fetch_payloads(qdrant_client, collection, ref):
             chunk_id = payload.get("chunk_id", "")

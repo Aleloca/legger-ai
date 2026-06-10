@@ -62,6 +62,16 @@ EXTRACTION_TABLE = [
     ),
     # bare codice name, no article: act-level ref (act_ref only)
     ("cosa prevede il codice del consumo?", [("codice-consumo", None, None)]),
+    ("cosa dice il codice civile sul comodato", [("codice-civile", None, None)]),
+    # bare SHORT abbreviations are everyday language, NOT act-level refs:
+    # only an adjacent article turns them into citations
+    ("ho un c.c. presso la banca", []),  # conto corrente
+    ("il CdS ha annullato il provvedimento", []),  # Consiglio di Stato
+    ("spedire al c.p. 123", []),  # casella postale
+    # the spelled-out cod. forms stay unambiguous even without an article
+    ("il cod. civ. disciplina il comodato", [("codice-civile", None, None)]),
+    # a foreign codice (nationality adjective) is not in the corpus
+    ("art. 242 del codice civile tedesco", [(None, "242", None)]),
     # --- estremi (tipo + numero + anno) --------------------------------------
     ("d.lgs. 81/2008 art 18", [("dlgs-81-2008", "18", None)]),
     ("D.Lgs. n. 81 del 2008", [("dlgs-81-2008", None, None)]),
@@ -104,6 +114,14 @@ EXTRACTION_TABLE = [
         "articoli 1341 e 1342 del codice civile",
         [("codice-civile", "1341", None), ("codice-civile", "1342", None)],
     ),
+    # singular "art. X e Y" continuation binds only when Y reads as a citation
+    # tail (source/connective/punctuation follows); a bare prose number does not
+    (
+        "art. 16 e 17 del d.lgs. 81/2008",
+        [("dlgs-81-2008", "16", None), ("dlgs-81-2008", "17", None)],
+    ),
+    ("ho violato l'art. 18 e 7 giorni dopo", [(None, "18", None)]),
+    ("tra l'art. 18 e 2000 euro", [(None, "18", None)]),
     # --- article-only (no source nearby): act_ref None, caller may bind later --
     ("cosa prevede l'articolo 18?", [(None, "18", None)]),
     ("art. 2051", [(None, "2051", None)]),
@@ -135,6 +153,8 @@ EXTRACTION_TABLE = [
     ("l'articolo di giornale parlava della legge", []),
     ("porto d'armi", []),
     ("negli anni 90/2000 la giurisprudenza era diversa", []),
+    # "l." preceded by letter-dot is the tail of a longer abbreviation, not legge
+    ("la s.r.l. 104/2020 è fallita", []),
     ("il decreto legislativo è una fonte del diritto", []),
     ("ci sono 81/2008 probabilità", []),
     ("", []),
