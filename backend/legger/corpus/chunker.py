@@ -21,7 +21,9 @@ Chunking rules
    unnumbered comma) are pre-split at paragraph boundaries (blank lines),
    then at line boundaries, then -- last resort, e.g. a single 30k-char
    line -- at hard character offsets. Every piece keeps the comma label of
-   the comma it came from.
+   the comma it came from, and units are rejoined with the separator they
+   had in the source (line-derived units with a single newline, never an
+   inflated blank line).
 4. Cap: ``len(text) <= MAX_TEXT`` (8000) always holds: the body is capped at
    :data:`MAX_BODY` (7600) and the header at :data:`MAX_HEADER` (300), so no
    chunk ever breaks the embedding window.
@@ -158,6 +160,9 @@ def chunk_act(
     for article in act.articles:
         occ = occurrences.get(article.number, 0) + 1
         occurrences[article.number] = occ
+        # ".{occ}" disambiguator: assumes B3's number normalization (suffixes
+        # in hyphen form, e.g. "1-bis") makes a literal "1.2" article number
+        # improbable, so the suffix cannot collide with a real number.
         art_key = article.number if occ == 1 else f"{article.number}.{occ}"
         groups = _split_article(article)
         total = len(groups)
@@ -198,6 +203,10 @@ def _split_article(article: Article) -> list[list[_Segment]]:
             segments.append((comma.number, text))
     if not segments:
         return [[]]
+    # Deliberate asymmetry: the commi-count check uses the raw article.commi
+    # (the structural count, including commi whose text normalized to blank),
+    # while body_len measures only the surviving non-empty segments -- the
+    # text that actually lands in the chunk.
     body_len = sum(len(text) for _, text in segments) + 2 * (len(segments) - 1)
     if len(article.commi) <= SPLIT_MAX_COMMI and body_len <= SPLIT_MAX_BODY:
         return [segments]
@@ -211,41 +220,51 @@ def _split_article(article: Article) -> list[list[_Segment]]:
 
 
 def _split_oversized(text: str) -> list[str]:
-    """Split a > MAX_BODY text at paragraph, then line, then char boundaries."""
+    """Split a > MAX_BODY text at paragraph, then line, then char boundaries.
+
+    Each unit carries the separator it had in the source (blank line at
+    paragraph boundaries, single newline at line boundaries) so the rejoin in
+    :func:`_merge_units` never inflates single newlines into blank lines.
+    """
     paragraphs = [p for p in _PARA_SPLIT.split(text) if p.strip()]
-    units: list[str] = []
+    units: list[tuple[str, str]] = []  # (separator before the unit, unit)
     for paragraph in paragraphs:
         if len(paragraph) <= MAX_BODY:
-            units.append(paragraph)
+            units.append((_SEP, paragraph))
             continue
         # Paragraph fallback failed: line boundaries.
-        for line in paragraph.splitlines():
+        for k, line in enumerate(paragraph.splitlines()):
+            sep = _SEP if k == 0 else "\n"
             if len(line) <= MAX_BODY:
-                units.append(line)
+                units.append((sep, line))
             else:
                 # Last resort: hard slices (a single line longer than the
                 # body budget would otherwise break the cap).
                 units.extend(
-                    line[start : start + TARGET_BODY] for start in range(0, len(line), TARGET_BODY)
+                    (sep if start == 0 else "\n", line[start : start + TARGET_BODY])
+                    for start in range(0, len(line), TARGET_BODY)
                 )
     return _merge_units(units)
 
 
-def _merge_units(units: list[str]) -> list[str]:
-    """Greedily merge consecutive units into pieces of <= TARGET_BODY chars."""
+def _merge_units(units: list[tuple[str, str]]) -> list[str]:
+    """Greedily merge consecutive units into pieces of <= TARGET_BODY chars.
+
+    Each unit is rejoined with the separator it had in the source text (the
+    first unit of a piece needs none).
+    """
     pieces: list[str] = []
-    bucket: list[str] = []
-    size = 0
-    for unit in units:
-        extra = len(unit) + (len(_SEP) if bucket else 0)
-        if bucket and size + extra > TARGET_BODY:
-            pieces.append(_SEP.join(bucket))
-            bucket, size = [], 0
-            extra = len(unit)
-        bucket.append(unit)
-        size += extra
+    bucket = ""
+    for sep, unit in units:
+        if not bucket:
+            bucket = unit
+        elif len(bucket) + len(sep) + len(unit) <= TARGET_BODY:
+            bucket += sep + unit
+        else:
+            pieces.append(bucket)
+            bucket = unit
     if bucket:
-        pieces.append(_SEP.join(bucket))
+        pieces.append(bucket)
     return pieces
 
 
@@ -298,7 +317,9 @@ def _build_header(ref: ActRef, act_title: str | None, article: Article, marker: 
         header = _assemble_header(ref, act_title, article, marker, *budgets)
         if len(header) <= MAX_HEADER:
             return header
-    return header  # smallest budgets are sized to always fit
+    # Backstop: the smallest budgets are sized to fit, but a pathological
+    # input must never break the structural MAX_TEXT cap.
+    return header[:MAX_HEADER]
 
 
 def _assemble_header(
@@ -328,7 +349,10 @@ def _assemble_header(
     if article.number == "unico" or article.number.lower().startswith("articolo unico"):
         art_line = "Articolo unico"
     else:
-        art_line = f"Art. {article.number}"
+        # The AKN parser's failure contract can emit an arbitrary-length raw
+        # heading as the number: budget its contribution like the rubrica so
+        # the header (and thus MAX_TEXT) stays structurally capped.
+        art_line = f"Art. {_truncate(article.number, rubric_budget)}"
     rubrica = _clean_rubrica(article.heading)
     if rubrica:
         art_line += f" — {_truncate(rubrica, rubric_budget)}"
