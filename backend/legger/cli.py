@@ -48,7 +48,32 @@ def main() -> None:
     )
     evalp.add_argument("--k", type=int, default=10, help="Hits retrieved per query (default 10)")
 
-    subparsers.add_parser("ingest", help="Ingest the corpus (not implemented yet)")
+    ingest = subparsers.add_parser("ingest", help="Corpus ingestion (bootstrap, delta)")
+    ingest_sub = ingest.add_subparsers(dest="ingest_command")
+    boot = ingest_sub.add_parser(
+        "bootstrap",
+        help="Full-corpus bootstrap with checkpoint/resume (re-run to resume)",
+    )
+    boot.add_argument(
+        "--collections",
+        default=None,
+        help='Comma-separated subset of corpus folders (e.g. "Codici,DPR"); default: all',
+    )
+    boot.add_argument(
+        "--embedder",
+        default="voyage-4-large",
+        help='Dense embedder: "bge-m3" or a "voyage-*" model id (default voyage-4-large)',
+    )
+    boot.add_argument(
+        "--qdrant-collection",
+        default="norme",
+        help='Target Qdrant collection (default "norme")',
+    )
+    boot.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse+chunk statistics only: no embedding, no DB writes (C6 cost estimate)",
+    )
 
     chat = subparsers.add_parser("chat", help="Interactive grounded chat over the indexed corpus")
     chat.add_argument(
@@ -81,6 +106,13 @@ def main() -> None:
         _run_chat(args)
         return
 
+    if args.command == "ingest":
+        if getattr(args, "ingest_command", None) == "bootstrap":
+            _run_ingest_bootstrap(args)
+            return
+        ingest.print_help()
+        raise SystemExit(1)
+
     print(f"'{args.command}' is not implemented yet.")
     raise SystemExit(1)
 
@@ -111,6 +143,63 @@ def _run_index(args: argparse.Namespace) -> None:
         for rel_path, error in report.file_errors:
             print(f"  - {rel_path}: {error}")
         raise SystemExit(2)
+
+
+def _run_ingest_bootstrap(args: argparse.Namespace) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    from legger.ingestion.bootstrap import bootstrap
+
+    collections = None
+    if args.collections:
+        collections = [name.strip() for name in args.collections.split(",") if name.strip()]
+
+    report = bootstrap(
+        collections=collections,
+        embedder_name=args.embedder,
+        qdrant_collection=args.qdrant_collection,
+        dry_run=args.dry_run,
+    )
+
+    if report.status == "dry-run":
+        print(f"\nDRY-RUN over {report.files_total} files ({report.elapsed_s:.0f}s):")
+        for name, stats in sorted(report.per_collection.items()):
+            print(
+                f"  {name}: {stats['files']} files "
+                f"(+{stats['files_dedup_skipped']} dedup-skipped), "
+                f"{stats['chunks']} chunks, {stats['chars']:,} chars"
+            )
+        print(
+            f"\nTOTAL: {report.files_processed} files would be indexed "
+            f"({report.files_dedup_skipped} dedup-skipped, {len(report.errors)} errors), "
+            f"{report.est_chunks} chunks, {report.total_chars:,} chars, "
+            f"~{report.est_tokens:,} tokens (chars/2.26)."
+        )
+    else:
+        print(
+            f"\nRun #{report.run_id} {report.status}: "
+            f"{report.files_processed} files processed, "
+            f"{report.files_skipped} skipped "
+            f"({report.files_resume_skipped} resume + {report.files_dedup_skipped} dedup), "
+            f"{report.chunks_indexed} chunks indexed "
+            f"({report.chunks_skipped} already present) into "
+            f"'{report.qdrant_collection}' in {report.elapsed_s:.0f}s."
+        )
+        if report.note:
+            print(f"Note: {report.note}")
+
+    if report.errors:
+        print(f"{len(report.errors)} file(s) failed (recorded in the run row):")
+        for entry in report.errors[:20]:
+            print(f"  - {entry['file_path']}: {entry['error']}")
+        if len(report.errors) > 20:
+            print(f"  ... and {len(report.errors) - 20} more")
+
+    if report.status == "failed":
+        raise SystemExit(1)
 
 
 def _run_eval(args: argparse.Namespace) -> None:
