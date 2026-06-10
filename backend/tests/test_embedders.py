@@ -17,6 +17,7 @@ from legger.retrieval.embedders import (
     BgeM3Embedder,
     Embedder,
     VoyageEmbedder,
+    _detect_device,
     get_embedder,
 )
 
@@ -115,6 +116,33 @@ def test_bge_dims_and_batch_size() -> None:
     query_vec = embedder.embed_query("q")
     assert len(query_vec) == embedder.dim
     assert fake.calls[1]["texts"] == ["q"]
+
+
+# --- device detection (LEGGER_EMBED_DEVICE escape hatch) ---
+
+
+def test_detect_device_env_override_forces_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LEGGER_EMBED_DEVICE=cpu wins verbatim, without consulting torch."""
+    monkeypatch.setenv("LEGGER_EMBED_DEVICE", "cpu")
+    assert _detect_device() == "cpu"
+
+
+def test_detect_device_invalid_override_warns_and_autodetects(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An invalid value is ignored with a warning; auto-detect runs instead."""
+    import torch
+
+    monkeypatch.setenv("LEGGER_EMBED_DEVICE", "tpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+
+    with caplog.at_level(logging.WARNING, logger="legger.retrieval.embedders"):
+        device = _detect_device()
+
+    assert device == "cpu"  # auto-detect result with cuda/mps mocked off
+    assert "LEGGER_EMBED_DEVICE" in caplog.text
+    assert "'tpu'" in caplog.text
 
 
 # --- voyage (mocked client) ---

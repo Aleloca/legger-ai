@@ -63,13 +63,17 @@ newest available torch is 2.2.2, which forced three pins in pyproject:
   kwarg, incompatible with the 4.x pin above.
 
 Device is auto-detected (cuda > mps > cpu) so the same code runs on dev Macs
-and the CPU-only VPS. Measured on this machine (MPS): ~9 docs/s at 1.5k chars,
-i.e. ~33 min for the 18.5k Codici chunks.
+and the CPU-only VPS; the ``LEGGER_EMBED_DEVICE`` env var (cpu|mps|cuda)
+overrides detection (see :func:`_detect_device`) — needed because MPS
+inference has hung indefinitely in detached (nohup) runs on this Intel Mac.
+Measured on this machine (MPS): ~9 docs/s at 1.5k chars, i.e. ~33 min for the
+18.5k Codici chunks.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from legger.settings import Settings
@@ -128,8 +132,32 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
+#: Devices accepted by the LEGGER_EMBED_DEVICE override.
+_VALID_DEVICES = ("cpu", "mps", "cuda")
+
+
 def _detect_device() -> str:
-    """Pick the best available torch device: cuda > mps > cpu."""
+    """Pick the torch device: ``LEGGER_EMBED_DEVICE`` override, else auto-detect.
+
+    The env var (cpu|mps|cuda) is an operational escape hatch — e.g. MPS
+    inference has wedged indefinitely at 0% CPU in detached (nohup) indexing
+    runs on Intel Macs, where forcing ``LEGGER_EMBED_DEVICE=cpu`` is the
+    reliable workaround. It is deliberately read from ``os.environ`` at detect
+    time rather than through :class:`~legger.settings.Settings`, so operators
+    can flip it per-process without touching configuration. An invalid value
+    logs a warning and falls back to auto-detection (cuda > mps > cpu).
+    """
+    override = os.environ.get("LEGGER_EMBED_DEVICE")
+    if override:
+        if override in _VALID_DEVICES:
+            return override
+        logger.warning(
+            "Ignoring invalid LEGGER_EMBED_DEVICE=%r (expected one of %s); "
+            "auto-detecting device instead.",
+            override,
+            "|".join(_VALID_DEVICES),
+        )
+
     import torch
 
     if torch.cuda.is_available():
