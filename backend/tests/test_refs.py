@@ -12,6 +12,7 @@ import pytest
 from legger.corpus.models import Act, Article, Comma
 from legger.corpus.parser import parse_act
 from legger.corpus.refs import (
+    _GENERATIONAL_CODICI,
     _KNOWN_CODICI,
     SOURCE_RANK,
     ActRef,
@@ -167,13 +168,20 @@ def test_act_slugs(tipo: str, expected: tuple[str, str]) -> None:
 
 FIXTURE_EXPECTATIONS = [
     # (rel_path, act_ref, act_type, number, year, date)
-    (PROTEZIONE_CIVILE, "dlgs-1-2018", "decreto_legislativo", "1", 2018, "2018-01-02"),
+    # Known-codici precedence: the subtitle names a well-known codice, so the
+    # registry slug is the canonical act_ref (the product keys on the codice
+    # name, not on the carrier decree) while the header still fills the
+    # estremi -- hence source stays "header" below.
+    (PROTEZIONE_CIVILE, "codice-protezione-civile", "codice", "1", 2018, "2018-01-02"),
     (DUPLICE_USO, "dlgs-89-1997", "decreto_legislativo", "89", 1997, "1997-02-24"),
     (VINO, "decreto-51-1988", "decreto", "51", 1988, "1988-01-20"),
-    (CODICE_PENALE, "rd-1398-1930", "regio_decreto", "1398", 1930, "1930-10-19"),
-    # AKN base64 file: the parser exposes the h1 from the decoded HTML, so the
-    # Codice Civile still derives from the header, not from the filename.
-    (CODICE_CIVILE, "rd-262-1942", "regio_decreto", "262", 1942, "1942-03-16"),
+    # "Approvazione del testo definitivo del Codice Penale." -> the approval
+    # boilerplate is stripped and the anchored registry match fires.
+    (CODICE_PENALE, "codice-penale", "codice", "1398", 1930, "1930-10-19"),
+    # AKN base64 file: the parser exposes h1 + subtitle from the decoded HTML;
+    # "Approvazione del testo del Codice civile." -> codice-civile, with the
+    # estremi of the carrier RD 262/1942 from the header.
+    (CODICE_CIVILE, "codice-civile", "codice", "262", 1942, "1942-03-16"),
     (REGIO_343, "rd-343-1912", "regio_decreto", "343", 1912, "1912-04-11"),
     (BILANCIO, "legge-207-2024", "legge", "207", 2024, "2024-12-30"),
     (ANNULLAMENTO, "rd-1371-1920", "regio_decreto", "1371", 1920, "1920-06-24"),
@@ -218,7 +226,7 @@ def test_same_act_in_two_collections_same_act_ref() -> None:
     in_abrogati = derive_act_ref(
         act, "Atti normativi abrogati (in originale)/Un altro nome di file.md"
     )
-    assert in_codici.act_ref == in_abrogati.act_ref == "rd-1398-1930"
+    assert in_codici.act_ref == in_abrogati.act_ref == "codice-penale"
 
 
 def test_header_with_comma_before_number() -> None:
@@ -345,6 +353,140 @@ def test_known_codice_requires_word_boundary() -> None:
     ref = derive_act_ref(make_act(title="CODICE PENALESCO"), "Codici/x.md")
     assert ref.act_ref != "codice-penale"
     assert ref.source == "filename"
+
+
+# ---------------------------------------------------------------------------
+# derive_act_ref: known-codici precedence (step 0)
+# ---------------------------------------------------------------------------
+
+
+def test_codice_subtitle_overrides_header_keeping_estremi() -> None:
+    """The well-known slug wins over the carrier estremi, which still fill
+    number/year/date (and keep source='header': that is what filled them)."""
+    ref = derive_act_ref(
+        make_act(
+            title="DECRETO LEGISLATIVO 02 gennaio 2018 n. 1 (Raccolta 2018)",
+            subtitle="Codice della protezione civile. (18G00011)",
+        ),
+        "Codici/x.md",
+    )
+    assert ref == ActRef(
+        act_ref="codice-protezione-civile",
+        act_type="codice",
+        number="1",
+        year=2018,
+        date="2018-01-02",
+        source="header",
+    )
+
+
+@pytest.mark.parametrize(
+    ("subtitle", "slug"),
+    [
+        ("Approvazione del testo del Codice civile. (042U0262)", "codice-civile"),
+        ("Approvazione del testo definitivo del Codice Penale. (030U1398)", "codice-penale"),
+        ("Approvazione del Codice civile.", "codice-civile"),
+        ("Testo del Codice civile.", "codice-civile"),
+    ],
+)
+def test_approval_boilerplate_is_stripped_before_match(subtitle: str, slug: str) -> None:
+    """GU approval boilerplate is stripped, then the match stays ANCHORED."""
+    ref = derive_act_ref(make_act(title=None, subtitle=subtitle), "Codici/x.md")
+    assert ref.act_ref == slug
+    assert ref.act_type == "codice"
+    assert ref.source == "header"
+    assert ref.number is None  # no header -> no estremi to fill
+
+
+def test_citing_title_does_not_fire_codice() -> None:
+    """Anchored matching: an act CITING a codice keeps its own identity."""
+    ref = derive_act_ref(
+        make_act(title="LEGGE 10 dicembre 2012 n. 219 Modifiche al codice civile in materia di"),
+        "Leggi contenenti deleghe/x.md",
+    )
+    assert ref.act_ref != "codice-civile"
+    # Same protection when the citation lives in the subtitle (the realistic
+    # GU layout: the h1 carries the estremi, the subtitle the citing text).
+    ref2 = derive_act_ref(
+        make_act(
+            title="LEGGE 10 dicembre 2012 n. 219",
+            subtitle="Modifiche al codice civile in materia di riconoscimento dei figli naturali.",
+        ),
+        "Leggi contenenti deleghe/x.md",
+    )
+    assert ref2.act_ref == "legge-219-2012"
+    assert ref2.act_type == "legge"
+
+
+def test_approvazione_testo_unico_does_not_fire_codice() -> None:
+    """'testo unico' is NOT approval boilerplate: dpr 156/1973 (the codice
+    postale carrier) keeps its header identity."""
+    ref = derive_act_ref(
+        make_act(
+            title="DECRETO DEL PRESIDENTE DELLA REPUBBLICA 29 marzo 1973 n. 156",
+            subtitle=(
+                "Approvazione del testo unico delle disposizioni legislative "
+                "in materia postale, di bancoposta e di telecomunicazioni."
+            ),
+        ),
+        "Testi Unici/x.md",
+    )
+    assert ref.act_ref == "dpr-156-1973"
+    assert ref.act_type == "dpr"
+
+
+@pytest.mark.parametrize(
+    ("title", "subtitle", "act_ref", "act_type"),
+    [
+        # dlgs 163/2006, 50/2016 and 36/2023 all subtitle-anchor "codice dei
+        # contratti pubblici": the shared slug would merge three acts.
+        (
+            "DECRETO LEGISLATIVO 18 aprile 2016 n. 50",
+            "((Codice dei contratti pubblici)). (16G00062)",
+            "dlgs-50-2016",
+            "decreto_legislativo",
+        ),
+        # Old (rd 1399/1930) and new (dpr 447/1988) codice di procedura penale.
+        (
+            "DECRETO DEL PRESIDENTE DELLA REPUBBLICA 22 settembre 1988 n. 447",
+            "Approvazione del codice di procedura penale.",
+            "dpr-447-1988",
+            "dpr",
+        ),
+        # rd 9/1941 (abrogato) and rd 327/1942 both anchor the navigazione name.
+        (
+            "REGIO DECRETO 30 marzo 1942 n. 327",
+            "Approvazione del testo definitivo del Codice della navigazione. (042U0327)",
+            "rd-327-1942",
+            "regio_decreto",
+        ),
+    ],
+)
+def test_generational_codice_never_overrides_header(
+    title: str, subtitle: str, act_ref: str, act_type: str
+) -> None:
+    """Corpus-audited multi-generation names keep the carrier header identity
+    (the shared slug would wrong-merge distinct acts)."""
+    ref = derive_act_ref(make_act(title=title, subtitle=subtitle), "Codici/x.md")
+    assert ref.act_ref == act_ref
+    assert ref.act_type == act_type
+    assert ref.source == "header"
+
+
+def test_generational_bare_title_still_reaches_shared_slug() -> None:
+    """Fallback unchanged: with NO parseable header a bare generational name
+    keeps the shared slug (the bare name means 'the codice vigente')."""
+    ref = derive_act_ref(make_act(title="Codice dei contratti pubblici"), "Codici/x.md")
+    assert ref.act_ref == "codice-contratti-pubblici"
+    assert ref.act_type == "codice"
+    assert ref.source == "header"
+
+
+def test_generational_set_entries_are_registry_slugs() -> None:
+    """Invariant: every excluded slug exists in the registry (a typo here
+    would silently disable nothing)."""
+    registry_slugs = {slug for _, slug in _KNOWN_CODICI}
+    assert _GENERATIONAL_CODICI <= registry_slugs
 
 
 # ---------------------------------------------------------------------------

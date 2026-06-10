@@ -103,7 +103,9 @@ class TestSingleChunkArticle:
     def test_header_first_line_is_estremi_and_title(self, chunks: list[Chunk]) -> None:
         (chunk,) = by_article(chunks, "18")
         line1 = chunk.header.splitlines()[0]
-        assert line1 == "Decreto Legislativo 1/2018 — Codice della protezione civile."
+        # Known-codici precedence (refs.py step 0): the act_type is "codice",
+        # so the estremi line is labelled "Codice", with the carrier numero.
+        assert line1 == "Codice 1/2018 — Codice della protezione civile."
 
     def test_header_has_rubrica_without_source_refs(self, chunks: list[Chunk]) -> None:
         (chunk,) = by_article(chunks, "18")
@@ -133,12 +135,12 @@ class TestSingleChunkArticle:
 
     def test_chunk_id(self, chunks: list[Chunk]) -> None:
         (chunk,) = by_article(chunks, "18")
-        assert chunk.id == "dlgs-1-2018#art-18#0"
+        assert chunk.id == "codice-protezione-civile#art-18#0"
 
     def test_payload_fields(self, chunks: list[Chunk]) -> None:
         (chunk,) = by_article(chunks, "18")
-        assert chunk.act_ref == "dlgs-1-2018"
-        assert chunk.act_type == "decreto_legislativo"
+        assert chunk.act_ref == "codice-protezione-civile"
+        assert chunk.act_type == "codice"
         assert chunk.act_title == "Codice della protezione civile."
         assert chunk.collection == "Codici"
         assert chunk.vigenza == "vigente"
@@ -210,7 +212,7 @@ class TestCodiceCivile:
     def test_art_2051_header(self, chunks: list[Chunk]) -> None:
         (chunk,) = by_article(chunks, "2051")
         lines = chunk.header.splitlines()
-        assert lines[0] == "Regio Decreto 262/1942 — Approvazione del testo del Codice civile."
+        assert lines[0] == "Codice 262/1942 — Approvazione del testo del Codice civile."
         assert "CODICE CIVILE" in lines  # attachment name on its own line
         assert "Art. 2051 — Danno cagionato da cosa in custodia" in lines
 
@@ -228,9 +230,9 @@ class TestCodiceCivile:
         ones = by_article(chunks, "1")
         assert len(ones) == 3
         assert {c.id for c in ones} == {
-            "rd-262-1942#art-1#0",
-            "rd-262-1942#art-1.2#0",
-            "rd-262-1942#art-1.3#0",
+            "codice-civile#art-1#0",
+            "codice-civile#art-1.2#0",
+            "codice-civile#art-1.3#0",
         }
 
 

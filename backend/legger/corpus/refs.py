@@ -23,6 +23,16 @@ slugification of the title.
 
 Derivation order (A3): the file content identifies the act, the path does not.
 
+0. **known-codice identity** -- if the title or subtitle (anchored, after
+   stripping GU approval boilerplate such as "Approvazione del testo del")
+   names a well-known codice, the registry slug IS the act_ref and the
+   act_type is ``codice``, even when the carrier decree's header parses:
+   the product keys on the codice name (citations render "Codice Civile",
+   the estremi fast path maps "c.c." to ``codice-civile``, URLs are
+   ``/norma/codice-civile``), not on the carrier estremi. The header is
+   still parsed to fill number/year/date. Codici whose name was carried by
+   several distinct acts over time (:data:`_GENERATIONAL_CODICI`) are
+   excluded -- for them the header stays authoritative;
 a. **header** -- parse ``Act.title`` (the first h1):
    ``<TIPO> <data italiana>[,] n. <numero>`` with trailing junk such as
    ``(Raccolta 2018)`` ignored;
@@ -41,10 +51,12 @@ c. **filename** -- low-quality fallback, documented per filename class:
 
 Known limitations (relevant to B5/D2 dedup):
 
-- the three sources are not guaranteed to agree with each other for the same
-  act (e.g. the header of the Codice Penale carrier decree gives
-  ``rd-1398-1930`` while a ``urn:nir:stato:codice.penale`` link gives
-  ``codice-penale``). Since the derivation is deterministic on
+- the sources are not guaranteed to agree with each other for the same act.
+  The known-codice precedence (step 0) removes the worst historical case
+  (the Codice Penale header used to give ``rd-1398-1930`` while a
+  ``urn:nir:stato:codice.penale`` link gives ``codice-penale``; both now
+  converge on ``codice-penale``), but header/URN/filename can still
+  disagree for ordinary acts. Since the derivation is deterministic on
   (content, path), identical files always get the same act_ref; mixed-source
   mismatches can only happen between *different* files of the same act, and
   ``source`` is exposed (with :data:`SOURCE_RANK` / :attr:`ActRef.rank`) so
@@ -264,9 +276,11 @@ def _slugify(text: str) -> str:
 #   militare di pace"/"di guerra", also reachable as URN tipo
 #   ``codice.penale.militare.di.pace``): both now have explicit entries;
 # - "codice dei contratti pubblici" names three distinct carrier acts (dlgs
-#   163/2006, 50/2016, 36/2023). All three corpus files carry a parseable
-#   dlgs header, so the registry never fires for them; the bare name (title
-#   or URN) inherently means "the codice vigente" and keeps the shared slug;
+#   163/2006, 50/2016, 36/2023), all in the corpus with anchoring subtitles:
+#   it is therefore in _GENERATIONAL_CODICI, so the codice-identity
+#   precedence never overrides their parseable dlgs headers. The bare name
+#   (title or URN, on the fallback paths) inherently means "the codice
+#   vigente" and keeps the shared slug;
 # - the Costituzione is NOT in the corpus (the "Leggi costituzionali"
 #   collection holds only revision laws and special statutes), so no
 #   "costituzione" well-known slug is registered -- revisit if a corpus
@@ -308,13 +322,86 @@ _KNOWN_CODICI: tuple[tuple[str, str], ...] = tuple(
 )
 
 
+# GU approval boilerplate that subtitles prepend to the codice name
+# ("Approvazione del testo del Codice civile.", "Approvazione del testo
+# definitivo del Codice Penale."). Stripped iteratively before the anchored
+# registry match (each strip shortens the text, so the loop is bounded; the
+# composite "approvazione del testo del" falls out of "approvazione del" +
+# "testo del"). The match itself STAYS anchored -- this is not a substring
+# scan, so citing titles ("Modifiche al codice civile ...") never fire, and
+# "Approvazione del testo unico ..." never fires either ("testo unico" is a
+# different role, deliberately absent from this list).
+_APPROVAL_PREFIXES = (
+    "approvazione del ",
+    "testo definitivo del ",
+    "testo del ",
+)
+
+# Codici whose well-known name was carried by SEVERAL distinct acts over
+# time. Full-corpus audit (287,913 files, title+subtitle anchored match,
+# 2026-06) of every registry key that fires on more than one set of header
+# estremi:
+# - "codice dei contratti pubblici": dlgs 163/2006, dlgs 50/2016 and dlgs
+#   36/2023 ALL anchor it from their subtitles (Codici, Decreti Legislativi,
+#   abrogati, ... collections);
+# - "codice di procedura penale": rd 1399/1930 (abrogato) and dpr 447/1988
+#   both anchor it ("Approvazione del (testo definitivo del) codice ...");
+# - "codice della navigazione": rd 9/1941 (abrogato, "Approvazione del
+#   testo del ...") and the vigente rd 327/1942 ("... testo definitivo del
+#   ...") both anchor it;
+# - "codice postale e delle telecomunicazioni": only the ABROGATED rd
+#   645/1936 anchors it (the current carrier, dpr 156/1973, is titled
+#   "Approvazione del testo unico ... in materia postale ..." and never
+#   anchors), so precedence would bind the shared slug to the wrong
+#   generation.
+# For these the shared slug would merge (or misbind) different generations
+# -- a wrong-merge class -- so the codice identity never overrides a parsed
+# header; the slug remains reachable on the fallback paths (bare title /
+# URN tipo), where the bare name inherently means "the codice vigente".
+# Every other registry key fires on at most ONE act's estremi corpus-wide
+# ("codice della strada" fires on none: the vigente dlgs 285/1992 is
+# subtitled "Nuovo codice della strada", which deliberately does not anchor).
+_GENERATIONAL_CODICI = frozenset(
+    {
+        "codice-contratti-pubblici",
+        "codice-procedura-penale",
+        "codice-navigazione",
+        "codice-postale-telecomunicazioni",
+    }
+)
+
+
 def _known_codice_slug(text: str) -> str | None:
     norm = _normalize_words(text)
     norm = norm.removeprefix("il ")
-    for name, slug in _KNOWN_CODICI:
-        # Whole-word prefix: "codice civile" must not match "codice civilistico".
-        if norm == name or norm.startswith(name + " "):
-            return slug
+    while True:
+        for name, slug in _KNOWN_CODICI:
+            # Whole-word prefix: "codice civile" must not match "codice civilistico".
+            if norm == name or norm.startswith(name + " "):
+                return slug
+        for prefix in _APPROVAL_PREFIXES:
+            if norm.startswith(prefix):
+                norm = norm[len(prefix) :]
+                break
+        else:
+            return None
+
+
+def _codice_identity(act: Act) -> str | None:
+    """The well-known codice slug when the act IS that codice, else None.
+
+    Anchored :func:`_known_codice_slug` match against the h1 title first,
+    then the subtitle (where the GU prints "Approvazione del testo del
+    Codice civile. (042U0262)"). Generational names are excluded: their
+    shared slug must not override a parsed carrier header (see
+    :data:`_GENERATIONAL_CODICI`). First match wins.
+    """
+    for text in (act.title, act.subtitle):
+        if not text:
+            continue
+        slug = _known_codice_slug(text)
+        if slug is not None:
+            return None if slug in _GENERATIONAL_CODICI else slug
     return None
 
 
@@ -515,18 +602,37 @@ def _from_filename(rel_path: str, collection: str) -> ActRef:
 def derive_act_ref(act: Act, rel_path: str) -> ActRef:
     """Derive the canonical :class:`ActRef` for a parsed act.
 
-    Order per A3: h1 header (authoritative), then the first URN NIR in the
-    text, then the filename (low-quality fallback). Never raises on weird
-    input; the derivation is deterministic, so the same (content, path) pair
-    always produces the same act_ref.
+    Order per A3: known-codice identity (the well-known slug is the product
+    key, so it wins over the carrier decree's estremi), then the h1 header,
+    then the first URN NIR in the text, then the filename (low-quality
+    fallback). Never raises on weird input; the derivation is deterministic,
+    so the same (content, path) pair always produces the same act_ref.
+
+    When the codice identity fires, the header is still parsed to fill
+    number/year/date and the source stays whatever filled the estremi
+    ("header" when the carrier header parsed; "header" also for a bare
+    codice heading, since the identity is read from the same h1/subtitle
+    material). No dedicated "codice" source value is introduced: ``source``
+    feeds :data:`SOURCE_RANK` and the D2 dedup ranking, and a fourth value
+    would force every consumer to rank it without describing provenance any
+    better than "header" does.
     """
+    header_ref = _from_header(act.title) if act.title else None
+    codice_slug = _codice_identity(act)
+    if codice_slug is not None:
+        if header_ref is not None:
+            # Keep the carrier estremi; override only the canonical key/type.
+            return header_ref.model_copy(update={"act_ref": codice_slug, "act_type": "codice"})
+        return ActRef(act_ref=codice_slug, act_type="codice", source="header")
+    if header_ref is not None:
+        return header_ref
     if act.title:
-        ref = _from_header(act.title)
-        if ref is not None:
-            return ref
-        codice_slug = _known_codice_slug(act.title)
-        if codice_slug is not None:
-            return ActRef(act_ref=codice_slug, act_type="codice", source="header")
+        # Bare-codice-title fallback: unlike _codice_identity this may yield
+        # a generational slug (no header parsed, so nothing to wrong-merge
+        # with: the bare name means "the codice vigente").
+        fallback_slug = _known_codice_slug(act.title)
+        if fallback_slug is not None:
+            return ActRef(act_ref=fallback_slug, act_type="codice", source="header")
     ref = _from_urn(act)
     if ref is not None:
         return ref
