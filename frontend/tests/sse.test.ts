@@ -61,6 +61,31 @@ describe("streamChat", () => {
     expect(JSON.parse(init.body)).toEqual({ messages: USER_TURN });
   });
 
+  it("include `config` nel body quando passata nelle opzioni", async () => {
+    const spy = mockFetch([
+      'event: done\ndata: {"stop_reason": "end_turn", "truncated": false}\n\n',
+    ]);
+    const config = {
+      answer_model: "claude-opus-4-8",
+      answer_effort: "max",
+      qu_model: null,
+      qu_effort: null,
+    };
+    await streamChat(USER_TURN, {}, { config });
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+      messages: USER_TURN,
+      config,
+    });
+  });
+
+  it("config null/assente → body senza la chiave config", async () => {
+    const spy = mockFetch([
+      'event: done\ndata: {"stop_reason": "end_turn", "truncated": false}\n\n',
+    ]);
+    await streamChat(USER_TURN, {}, { config: null });
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ messages: USER_TURN });
+  });
+
   it("smista la sequenza completa di eventi nell'ordine del contratto", async () => {
     mockFetch([
       'event: status\ndata: {"stage": "searching"}\n\n' +

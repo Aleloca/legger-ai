@@ -17,18 +17,24 @@ import * as React from "react";
 
 import { ActPanel, type ActTarget } from "@/components/act-panel";
 import { Chat } from "@/components/chat";
+import { ChatSettings } from "@/components/chat-settings";
+import { configSummary, useChatConfig } from "@/lib/chat-config";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
   const [target, setTarget] = React.useState<ActTarget | null>(null);
   const closePanel = React.useCallback(() => setTarget(null), []);
+  // Parametri sperimentali (beta testing): persistiti in localStorage,
+  // validati contro il catalogo del backend, inviati con ogni turno.
+  const { config, setConfig, catalog } = useChatConfig();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="border-b border-border px-6 py-3">
+      <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <span className="font-display text-xl font-medium tracking-tight">
           legger<span className="text-primary">.</span>
         </span>
+        <ChatSettings config={config} catalog={catalog} onChange={setConfig} />
       </header>
       <div
         className={cn(
@@ -39,7 +45,11 @@ export default function Home() {
             "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,45%)] lg:grid-rows-[minmax(0,1fr)]",
         )}
       >
-        <Chat onCitationClick={setTarget} />
+        <Chat
+          onCitationClick={setTarget}
+          config={config}
+          configSummary={configSummary(config, catalog)}
+        />
         {target ? <ActPanel target={target} onClose={closePanel} /> : null}
       </div>
     </div>

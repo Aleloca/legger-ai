@@ -103,6 +103,7 @@ def stub_calls(
     def fake_stream_answer(messages: list[dict], hits: list[SearchHit], **kwargs: Any):
         recorded["stream_messages"] = messages
         recorded["stream_hits"] = hits
+        recorded["stream_kwargs"] = kwargs
         yield from deltas
         return stop_reason
 
@@ -112,6 +113,14 @@ def stub_calls(
 
 
 BODY = {"messages": [{"role": "user", "content": "art. 2051 c.c."}]}
+
+#: The effective config reported on `done` when the request carries none.
+DEFAULT_CONFIG = {
+    "answer_model": "claude-sonnet-4-6",
+    "answer_effort": None,
+    "qu_model": "claude-haiku-4-5",
+    "qu_effort": None,
+}
 
 
 # --- happy path: event sequence ------------------------------------------------
@@ -144,7 +153,11 @@ def test_event_sequence_and_payloads(client: TestClient, monkeypatch: pytest.Mon
     # Tokens reconstruct the full transcript, marker included.
     tokens = "".join(data["text"] for name, data in events if name == "token")
     assert tokens == "La custodia: [[codice-civile|art.2051]] risponde il custode."
-    assert events[-1][1] == {"stop_reason": "end_turn", "truncated": False}
+    assert events[-1][1] == {
+        "stop_reason": "end_turn",
+        "truncated": False,
+        "config": DEFAULT_CONFIG,
+    }
 
     # The pipeline got the validated conversation and the app.state wiring.
     assert recorded["retrieve_messages"] == BODY["messages"]
@@ -232,7 +245,10 @@ def test_unparseable_bracket_pair_gets_no_citation(
 def test_done_reports_truncation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     stub_calls(monkeypatch, deltas=["Risposta tronca"], stop_reason="max_tokens")
     events = parse_sse(client.post("/chat", json=BODY).text)
-    assert events[-1] == ("done", {"stop_reason": "max_tokens", "truncated": True})
+    assert events[-1] == (
+        "done",
+        {"stop_reason": "max_tokens", "truncated": True, "config": DEFAULT_CONFIG},
+    )
 
 
 def test_unterminated_marker_flushed_at_end(
@@ -341,6 +357,111 @@ def test_twenty_turns_is_accepted(client: TestClient, monkeypatch: pytest.Monkey
     assert len(turns) == 20
     response = client.post("/chat", json={"messages": turns})
     assert response.status_code == 200
+
+
+# --- beta-testing config (per-conversation model/effort) -------------------------
+
+
+def test_config_plumbed_to_retrieve_and_stream_answer(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded = stub_calls(monkeypatch)
+    body = {
+        **BODY,
+        "config": {
+            "answer_model": "claude-opus-4-8",
+            "answer_effort": "max",
+            "qu_model": "claude-sonnet-4-6",
+            "qu_effort": "low",
+        },
+    }
+    events = parse_sse(client.post("/chat", json=body).text)
+    assert recorded["retrieve_kwargs"]["qu_model"] == "claude-sonnet-4-6"
+    assert recorded["retrieve_kwargs"]["qu_effort"] == "low"
+    assert recorded["stream_kwargs"]["model"] == "claude-opus-4-8"
+    assert recorded["stream_kwargs"]["effort"] == "max"
+    # done reports the effective config (transparency for testers).
+    assert events[-1][1]["config"] == {
+        "answer_model": "claude-opus-4-8",
+        "answer_effort": "max",
+        "qu_model": "claude-sonnet-4-6",
+        "qu_effort": "low",
+    }
+
+
+def test_partial_config_fills_defaults_on_done(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded = stub_calls(monkeypatch)
+    body = {**BODY, "config": {"answer_model": "claude-haiku-4-5", "answer_effort": "high"}}
+    events = parse_sse(client.post("/chat", json=body).text)
+    # haiku-4-5 does not support effort: the effective config reports None
+    # (build_model_kwargs drops it before the API call).
+    assert events[-1][1]["config"] == {
+        "answer_model": "claude-haiku-4-5",
+        "answer_effort": None,
+        "qu_model": "claude-haiku-4-5",
+        "qu_effort": None,
+    }
+    assert recorded["retrieve_kwargs"]["qu_model"] is None
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"answer_model": "claude-fantasia-9"},  # unknown model
+        {"answer_model": "claude-sonnet-4-6-20251114"},  # date-suffixed variant
+        {"qu_model": "claude-opus-4-8"},  # valid answer model, NOT allowed for QU
+        {"answer_effort": "xhigh"},  # effort outside the allowlist
+        {"qu_effort": "massimo"},  # effort outside the allowlist
+    ],
+    ids=["unknown-model", "date-suffixed", "qu-not-allowed", "bad-answer-effort", "bad-qu-effort"],
+)
+def test_config_validation_422(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, config: dict
+) -> None:
+    stub_calls(monkeypatch)  # must never be reached
+    response = client.post("/chat", json={**BODY, "config": config})
+    assert response.status_code == 422
+
+
+def test_null_and_missing_config_are_accepted(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_calls(monkeypatch)
+    assert client.post("/chat", json={**BODY, "config": None}).status_code == 200
+    assert client.post("/chat", json={**BODY, "config": {}}).status_code == 200
+
+
+# --- GET /chat/models -------------------------------------------------------------
+
+
+def test_chat_models_catalog_shape(client: TestClient) -> None:
+    response = client.get("/chat/models")
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"answer", "qu", "effort_levels"}
+    assert payload["effort_levels"] == ["low", "medium", "high", "max"]
+    assert payload["answer"]["default"] == "claude-sonnet-4-6"
+    assert payload["qu"]["default"] == "claude-haiku-4-5"
+    answer_ids = {m["id"] for m in payload["answer"]["models"]}
+    assert answer_ids == {
+        "claude-haiku-4-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
+        "claude-opus-4-8",
+    }
+    assert {m["id"] for m in payload["qu"]["models"]} == {"claude-haiku-4-5", "claude-sonnet-4-6"}
+    sonnet = next(m for m in payload["answer"]["models"] if m["id"] == "claude-sonnet-4-6")
+    assert sonnet == {
+        "id": "claude-sonnet-4-6",
+        "label": "Sonnet 4.6",
+        "input_usd_mtok": 3.0,
+        "output_usd_mtok": 15.0,
+        "supports_effort": True,
+    }
+    haiku = next(m for m in payload["qu"]["models"] if m["id"] == "claude-haiku-4-5")
+    assert haiku["supports_effort"] is False
 
 
 # --- generator teardown --------------------------------------------------------

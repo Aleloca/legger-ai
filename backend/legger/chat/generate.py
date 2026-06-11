@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from legger.chat.models_catalog import build_model_kwargs
 from legger.chat.prompts import SYSTEM_PROMPT, format_context
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ def stream_answer(
     hits: list[SearchHit],
     *,
     anthropic_client: Anthropic,
+    model: str | None = None,
+    effort: str | None = None,
 ) -> Generator[str, None, str | None]:
     """Stream the grounded answer for ``messages`` given retrieved ``hits``.
 
@@ -60,6 +63,15 @@ def stream_answer(
     stream_answer(...)`` when delegating from another generator. A plain
     ``for`` loop silently discards it — fine only for callers that do not
     care about truncation.
+
+    ``model``/``effort`` are the per-conversation beta-testing overrides
+    (F2 ``ChatRequest.config``): ``model`` must come from
+    :data:`~legger.chat.models_catalog.ALLOWED_ANSWER_MODELS` (the API layer
+    validates; this function trusts its caller), ``None`` keeps today's
+    default (:data:`MODEL_SONNET`, no explicit effort). The per-model API
+    constraints — no ``temperature`` on opus-4-8, no ``output_config`` on
+    haiku-4-5 — are applied by
+    :func:`~legger.chat.models_catalog.build_model_kwargs`.
 
     The system prompt and the normative context go as two system blocks: the
     prompt is stable, the context block changes every turn and therefore
@@ -74,9 +86,8 @@ def stream_answer(
         f"<contesto>\n{format_context(hits)}\n</contesto>"
     )
     with anthropic_client.messages.stream(
-        model=MODEL_SONNET,
+        **build_model_kwargs(model or MODEL_SONNET, effort, temperature=TEMPERATURE),
         max_tokens=MAX_TOKENS,
-        temperature=TEMPERATURE,
         system=[
             {
                 "type": "text",

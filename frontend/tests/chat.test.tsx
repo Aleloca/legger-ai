@@ -245,6 +245,35 @@ describe("Chat", () => {
     });
   });
 
+  it("config non-default → passata a streamChat e chip visibile", () => {
+    const config = {
+      answer_model: "claude-opus-4-8",
+      answer_effort: "max",
+      qu_model: null,
+      qu_effort: null,
+    };
+    render(
+      <Chat config={config} configSummary="Opus 4.8 · effort max — QU: Haiku 4.5" />,
+    );
+    expect(
+      screen.getByText("Opus 4.8 · effort max — QU: Haiku 4.5"),
+    ).toBeInTheDocument();
+    sendMessage("domanda");
+    expect(streamChatMock.mock.calls[0][2]).toMatchObject({ config });
+  });
+
+  it("config tutta-default → niente chiave config nelle opzioni", () => {
+    const config = {
+      answer_model: null,
+      answer_effort: null,
+      qu_model: null,
+      qu_effort: null,
+    };
+    render(<Chat config={config} configSummary={null} />);
+    sendMessage("domanda");
+    expect(streamChatMock.mock.calls[0][2].config).toBeNull();
+  });
+
   it("il turno fallito (assistant vuoto) non entra nel payload successivo", () => {
     render(<Chat />);
     sendMessage("prima domanda");

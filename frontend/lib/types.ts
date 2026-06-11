@@ -37,6 +37,50 @@ export interface DoneData {
   stop_reason: string | null;
   /** True quando il modello ha raggiunto il tetto di token (risposta a metà). */
   truncated: boolean;
+  /**
+   * Configurazione EFFETTIVA del turno (default riempiti; effort null se
+   * omesso o non supportato dal modello) — trasparenza per i beta tester.
+   */
+  config?: EffectiveConfig;
+}
+
+/** Il blocco `config` dell'evento `done` (valori effettivi, mai null sui modelli). */
+export interface EffectiveConfig {
+  answer_model: string;
+  answer_effort: string | null;
+  qu_model: string;
+  qu_effort: string | null;
+}
+
+/**
+ * Override per-conversazione di modello/effort (fase di beta testing).
+ * `null` = default del backend; inviato come `config` nel body di POST
+ * /chat solo quando almeno un campo è non-default.
+ */
+export interface ChatConfig {
+  answer_model: string | null;
+  answer_effort: string | null;
+  qu_model: string | null;
+  qu_effort: string | null;
+}
+
+/** Una voce del catalogo modelli (GET /api/backend/chat/models). */
+export interface CatalogModel {
+  id: string;
+  label: string;
+  /** Prezzo input, USD per milione di token. */
+  input_usd_mtok: number;
+  /** Prezzo output, USD per milione di token. */
+  output_usd_mtok: number;
+  /** False (es. Haiku): il backend NON invia output_config.effort. */
+  supports_effort: boolean;
+}
+
+/** Il catalogo modelli: la UI delle impostazioni si disegna DA QUI. */
+export interface ModelsCatalog {
+  answer: { default: string; models: CatalogModel[] };
+  qu: { default: string; models: CatalogModel[] };
+  effort_levels: string[];
 }
 
 /** Unione discriminata degli eventi del flusso SSE. */

@@ -14,7 +14,7 @@
  * `onError`. L'abort via AbortSignal è silenzioso (nessuna callback).
  */
 
-import type { Citation, DoneData, Source, SseEvent } from "@/lib/types";
+import type { ChatConfig, Citation, DoneData, Source, SseEvent } from "@/lib/types";
 
 export interface StreamHandlers {
   onStatus?: (stage: string) => void;
@@ -29,6 +29,11 @@ export interface StreamOptions {
   signal?: AbortSignal;
   /** Override dell'endpoint (default: il rewrite proxy di Next). */
   endpoint?: string;
+  /**
+   * Override per-conversazione di modello/effort (beta testing): incluso
+   * come `config` nel body quando presente; assente = default backend.
+   */
+  config?: ChatConfig | null;
 }
 
 const DEFAULT_ENDPOINT = "/api/backend/chat";
@@ -122,14 +127,14 @@ export async function streamChat(
   handlers: StreamHandlers,
   options: StreamOptions = {},
 ): Promise<void> {
-  const { signal, endpoint = DEFAULT_ENDPOINT } = options;
+  const { signal, endpoint = DEFAULT_ENDPOINT, config = null } = options;
 
   let response: Response;
   try {
     response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify(config ? { messages, config } : { messages }),
       signal,
     });
   } catch (err) {

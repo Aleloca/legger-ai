@@ -39,12 +39,27 @@ vigenza, verified, reason}``
     bracket pair that does not parse as a marker gets no citation event
     (it flows through as plain token text).
 
-``event: done`` — data ``{"stop_reason": str|null, "truncated": bool}``
+``event: done`` — data ``{"stop_reason": str|null, "truncated": bool,
+"config": {answer_model, answer_effort, qu_model, qu_effort}}``
     End of a successful answer. ``stop_reason`` is the model's stop reason
     (e.g. ``"end_turn"``), or ``null`` when the generation stream ended
     without reporting one. ``truncated`` is true when the model hit the
     token cap (``stop_reason == "max_tokens"``): the answer ends
-    mid-sentence and the UI should say so.
+    mid-sentence and the UI should say so. ``config`` is the EFFECTIVE
+    beta-testing configuration the turn ran with (defaults filled in;
+    efforts are ``null`` when omitted or unsupported by the chosen model) —
+    transparency for testers comparing parameters.
+
+BETA-TESTING CONFIG (per-conversation model/effort overrides)
+-------------------------------------------------------------
+
+The request body optionally carries ``config`` (see :class:`ChatConfig`):
+which model generates the answer, which one does query understanding, and
+the ``output_config.effort`` for each. Values are validated against the
+single source of truth, :mod:`legger.chat.models_catalog` (422 on anything
+outside the allowlists — client strings never reach the Anthropic API
+unvalidated). ``GET /chat/models`` returns that catalog so the frontend
+renders its selects from the backend, with no duplicated list.
 
 ``event: error`` — data ``{"message": "..."}``
     Terminal: emitted instead of further events when retrieval or
@@ -84,12 +99,20 @@ from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from legger.api.acts import anchor_from_chunk_segment
-from legger.chat.generate import stream_answer
+from legger.chat.generate import MODEL_SONNET, stream_answer
 from legger.chat.guardrail import check_citation
+from legger.chat.models_catalog import (
+    ALLOWED_ANSWER_MODELS,
+    ALLOWED_QU_MODELS,
+    EFFORT_LEVELS,
+    catalog_payload,
+    effective_effort,
+)
 from legger.chat.stream import MarkerParser, MarkerPiece, Piece, parse_marker
+from legger.chat.understanding import MODEL_HAIKU
 from legger.retrieval.pipeline import retrieve
 
 if TYPE_CHECKING:
@@ -120,8 +143,45 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT_CHARS)
 
 
+class ChatConfig(BaseModel):
+    """Per-conversation model/effort overrides (beta-testing phase).
+
+    All fields optional: ``None`` keeps today's defaults. Values are
+    validated against :mod:`legger.chat.models_catalog` — the single source
+    of truth — so an unknown model or effort is a 422 and NEVER reaches the
+    Anthropic API.
+    """
+
+    answer_model: str | None = None
+    answer_effort: str | None = None
+    qu_model: str | None = None
+    qu_effort: str | None = None
+
+    @field_validator("answer_model")
+    @classmethod
+    def _answer_model_allowed(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_ANSWER_MODELS:
+            raise ValueError(f"modello non ammesso per le risposte: {v!r}")
+        return v
+
+    @field_validator("qu_model")
+    @classmethod
+    def _qu_model_allowed(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_QU_MODELS:
+            raise ValueError(f"modello non ammesso per la comprensione della domanda: {v!r}")
+        return v
+
+    @field_validator("answer_effort", "qu_effort")
+    @classmethod
+    def _effort_allowed(cls, v: str | None) -> str | None:
+        if v is not None and v not in EFFORT_LEVELS:
+            raise ValueError(f"livello di effort non ammesso: {v!r}")
+        return v
+
+
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_TURNS)
+    config: ChatConfig | None = None
 
     @model_validator(mode="after")
     def _last_turn_is_user(self) -> ChatRequest:
@@ -188,9 +248,30 @@ def _piece_events(piece: Piece, hits: list[SearchHit]) -> Iterator[str]:
         yield _sse("token", {"text": piece.text})
 
 
-def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
+def _effective_config(config: ChatConfig | None) -> dict[str, str | None]:
+    """The configuration the turn actually runs with (defaults filled in).
+
+    Efforts are ``None`` when omitted or when the chosen model does not
+    support ``output_config.effort`` (build_model_kwargs drops it) — what is
+    reported here is exactly what reaches the Anthropic API.
+    """
+    config = config or ChatConfig()
+    answer_model = config.answer_model or MODEL_SONNET
+    qu_model = config.qu_model or MODEL_HAIKU
+    return {
+        "answer_model": answer_model,
+        "answer_effort": effective_effort(answer_model, config.answer_effort),
+        "qu_model": qu_model,
+        "qu_effort": effective_effort(qu_model, config.qu_effort),
+    }
+
+
+def _event_stream(
+    messages: list[Message], app: FastAPI, config: ChatConfig | None = None
+) -> Iterator[str]:
     """The SSE event generator (see the module docstring for the contract)."""
     state = app.state
+    config = config or ChatConfig()
     yield _sse("status", {"stage": "searching"})
 
     if getattr(state, "embedder", None) is None:
@@ -207,6 +288,8 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
             anthropic_client=state.anthropic,
             collection=state.settings.qdrant_collection,
             embedder=state.embedder,
+            qu_model=config.qu_model,
+            qu_effort=config.qu_effort,
         )
     except Exception:
         logger.exception("/chat retrieval failed")
@@ -215,7 +298,13 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
 
     parser = MarkerParser()
     stop_reason: str | None = None
-    generation = stream_answer(messages, result.hits, anthropic_client=state.anthropic)
+    generation = stream_answer(
+        messages,
+        result.hits,
+        anthropic_client=state.anthropic,
+        model=config.answer_model,
+        effort=config.answer_effort,
+    )
     try:
         yield _sse("sources", {"sources": _sources_payload(result)})
         while True:
@@ -239,7 +328,25 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
         # instead of whenever the abandoned generator is garbage-collected.
         generation.close()
 
-    yield _sse("done", {"stop_reason": stop_reason, "truncated": stop_reason == "max_tokens"})
+    yield _sse(
+        "done",
+        {
+            "stop_reason": stop_reason,
+            "truncated": stop_reason == "max_tokens",
+            "config": _effective_config(config),
+        },
+    )
+
+
+@router.get("/chat/models")
+def chat_models() -> dict:
+    """The model/effort catalog for the beta-testing settings panel.
+
+    The frontend renders its selects FROM this payload (ids, labels, prices
+    per Mtok, effort support, defaults) — the allowlist lives only in
+    :mod:`legger.chat.models_catalog`.
+    """
+    return catalog_payload()
 
 
 @router.post("/chat")
@@ -247,7 +354,7 @@ def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     """Stream the grounded answer for a conversation as SSE."""
     messages: list[Message] = [{"role": m.role, "content": m.content} for m in payload.messages]
     return StreamingResponse(
-        _event_stream(messages, request.app),
+        _event_stream(messages, request.app, payload.config),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -70,6 +70,7 @@ class Harness:
         self.rerank_error: Exception | None = None
         # --- call records --------------------------------------------------
         self.understand_calls: list[list[dict]] = []
+        self.understand_kwargs: list[dict] = []
         self.resolve_calls: list[list[Any]] = []
         self.hybrid_calls: list[dict] = []
         self.rerank_calls: list[dict] = []
@@ -80,9 +81,10 @@ class Harness:
         self.anthropic = object()
         self.embedder = object()
 
-        def fake_understand(messages, *, anthropic_client):
+        def fake_understand(messages, *, anthropic_client, model=None, effort=None):
             assert anthropic_client is self.anthropic
             self.understand_calls.append(messages)
+            self.understand_kwargs.append({"model": model, "effort": effort})
             if self.understand_error is not None:
                 raise self.understand_error
             if self.analysis is not None:
@@ -138,6 +140,8 @@ class Harness:
         k: int = 10,
         citation_budget: int = 4000,
         rerank_enabled: Any = _UNSET,
+        qu_model: str | None = None,
+        qu_effort: str | None = None,
     ):
         if rerank_enabled is self._UNSET:
             rerank_enabled = self.rerank_enabled
@@ -151,6 +155,8 @@ class Harness:
             k=k,
             citation_budget=citation_budget,
             rerank_enabled=rerank_enabled,
+            qu_model=qu_model,
+            qu_effort=qu_effort,
         )
 
 
@@ -411,6 +417,17 @@ def test_blank_rewritten_query_falls_back_to_original(harness: Harness) -> None:
     harness.analysis = QueryAnalysis(rewritten_query="   ")
     harness.run([user("responsabilità del custode")])
     assert harness.hybrid_calls[0]["query"] == "responsabilità del custode"
+
+
+def test_qu_model_and_effort_passed_through(harness: Harness) -> None:
+    # Beta-testing config: qu_model/qu_effort flow into understand_query.
+    harness.run([user("q")], qu_model="claude-sonnet-4-6", qu_effort="low")
+    assert harness.understand_kwargs == [{"model": "claude-sonnet-4-6", "effort": "low"}]
+
+
+def test_qu_overrides_default_to_none(harness: Harness) -> None:
+    harness.run([user("q")])
+    assert harness.understand_kwargs == [{"model": None, "effort": None}]
 
 
 def test_understanding_crash_degrades_to_verbatim(harness: Harness) -> None:

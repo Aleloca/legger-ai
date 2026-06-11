@@ -267,6 +267,38 @@ def test_tool_schema_mirrors_query_analysis_fields() -> None:
     assert set(ANALYZE_QUERY_TOOL["input_schema"]["properties"]) == set(QueryAnalysis.model_fields)
 
 
+def test_default_call_has_no_output_config() -> None:
+    # No config sent: today's behavior (haiku, temp 0.0, no effort field).
+    fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
+    understand_query(messages_one_turn(), anthropic_client=fake)
+    call = fake.calls[0]
+    assert call["model"] == MODEL_HAIKU
+    assert call["temperature"] == 0.0
+    assert "output_config" not in call
+
+
+def test_model_override_sonnet_with_effort() -> None:
+    fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
+    understand_query(
+        messages_one_turn(), anthropic_client=fake, model="claude-sonnet-4-6", effort="low"
+    )
+    call = fake.calls[0]
+    assert call["model"] == "claude-sonnet-4-6"
+    assert call["temperature"] == 0.0  # QU stays deterministic on any model
+    assert call["output_config"] == {"effort": "low"}
+
+
+def test_haiku_with_effort_drops_output_config() -> None:
+    # output_config.effort on haiku-4-5 is a 400 at the API: dropped here.
+    fake = FakeAnthropic(content=[tool_use_block({"rewritten_query": "q"})])
+    understand_query(
+        messages_one_turn(), anthropic_client=fake, model="claude-haiku-4-5", effort="max"
+    )
+    call = fake.calls[0]
+    assert call["model"] == "claude-haiku-4-5"
+    assert "output_config" not in call
+
+
 def test_model_haiku_constant() -> None:
     # Verified against platform.claude.com models overview (2026-06-11):
     # alias claude-haiku-4-5 (full id claude-haiku-4-5-20251001).

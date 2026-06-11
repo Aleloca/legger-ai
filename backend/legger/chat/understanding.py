@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from legger.chat.generate import last_user_message
+from legger.chat.models_catalog import build_model_kwargs
 
 if TYPE_CHECKING:
     from anthropic import Anthropic
@@ -194,7 +195,13 @@ def _format_input(messages: list[Message]) -> str:
     )
 
 
-def understand_query(messages: list[Message], *, anthropic_client: Anthropic) -> QueryAnalysis:
+def understand_query(
+    messages: list[Message],
+    *,
+    anthropic_client: Anthropic,
+    model: str | None = None,
+    effort: str | None = None,
+) -> QueryAnalysis:
     """Analyze the current user message for retrieval; NEVER raises for QU.
 
     One Haiku call with tool use *forzato* on ``analyze_query``; the tool
@@ -202,6 +209,14 @@ def understand_query(messages: list[Message], *, anthropic_client: Anthropic) ->
     error, timeout, no tool_use block, schema-invalid input) logs a warning
     and falls back to the last user message verbatim — the pipeline then
     behaves exactly like the pre-E2 chat.
+
+    ``model``/``effort`` are the per-conversation beta-testing overrides
+    (F2 ``ChatRequest.config``): ``model`` must come from
+    :data:`~legger.chat.models_catalog.ALLOWED_QU_MODELS` (the API layer
+    validates), ``None`` keeps today's default (:data:`MODEL_HAIKU`, no
+    explicit effort). Per-model API constraints (e.g. no ``output_config``
+    on haiku-4-5) are applied by
+    :func:`~legger.chat.models_catalog.build_model_kwargs`.
 
     Sync/blocking call: it blocks for up to ~``TIMEOUT_SECONDS``. In async
     contexts (F2 SSE streaming) run it via a threadpool (e.g.
@@ -216,9 +231,8 @@ def understand_query(messages: list[Message], *, anthropic_client: Anthropic) ->
         response = anthropic_client.with_options(
             timeout=TIMEOUT_SECONDS, max_retries=MAX_RETRIES
         ).messages.create(
-            model=MODEL_HAIKU,
+            **build_model_kwargs(model or MODEL_HAIKU, effort, temperature=TEMPERATURE),
             max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
             system=SYSTEM_PROMPT,
             tools=[ANALYZE_QUERY_TOOL],
             tool_choice={"type": "tool", "name": "analyze_query"},

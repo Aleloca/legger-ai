@@ -8,21 +8,33 @@
  * placeholder assistant → streamChat smista gli eventi sulle callback
  * che aggiornano l'ultimo messaggio. `error` è terminale e riabilita
  * il composer; l'abort (unmount) è silenzioso.
+ *
+ * `config` (beta testing, da useChatConfig in page.tsx) viaggia nel
+ * body di POST /chat solo quando è non-default; `configSummary` è il
+ * riassunto a una riga mostrato come chip sopra il composer.
  */
 
+import { Settings2 } from "lucide-react";
 import * as React from "react";
 
 import { Composer } from "@/components/composer";
 import { MessageList } from "@/components/message-list";
+import { isDefaultConfig } from "@/lib/chat-config";
 import type { CitationRef } from "@/lib/render";
 import { streamChat } from "@/lib/sse";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatConfig, ChatMessage } from "@/lib/types";
 
 export function Chat({
   onCitationClick,
+  config,
+  configSummary,
 }: {
   /** Click su un chip-citazione: apre la split-view della norma (G4). */
   onCitationClick?: (ref: CitationRef) => void;
+  /** Override modello/effort (beta testing); assente o default = niente config nel body. */
+  config?: ChatConfig | null;
+  /** Riassunto della config non-default per il chip sopra il composer. */
+  configSummary?: string | null;
 }) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = React.useState(false);
@@ -96,10 +108,13 @@ export function Chat({
             patchLast((m) => ({ ...m, final: true, error: message }));
           },
         },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          config: config && !isDefaultConfig(config) ? config : null,
+        },
       );
     },
-    [messages, streaming, patchLast],
+    [messages, streaming, patchLast, config],
   );
 
   return (
@@ -110,6 +125,16 @@ export function Chat({
         onCitationClick={onCitationClick}
         onSuggestion={(text) => setPrefill({ text })}
       />
+      {configSummary ? (
+        <div className="px-6 pb-1.5">
+          <div className="mx-auto w-full max-w-3xl">
+            <span className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-secondary px-2 py-0.5 text-[0.6875rem] tracking-wide text-muted-foreground">
+              <Settings2 aria-hidden className="size-3" />
+              {configSummary}
+            </span>
+          </div>
+        </div>
+      ) : null}
       <Composer onSend={send} disabled={streaming} prefill={prefill} />
     </div>
   );

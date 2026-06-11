@@ -156,6 +156,8 @@ def retrieve(
     k: int = 10,
     citation_budget: int = 4000,
     rerank_enabled: bool | None = None,
+    qu_model: str | None = None,
+    qu_effort: str | None = None,
 ) -> RetrievalResult:
     """Run the full retrieval pipeline for the current user turn.
 
@@ -163,7 +165,10 @@ def retrieve(
     policy. ``engine`` may be ``None`` (the fastpath acts-table probe is then
     skipped; resolution falls through to Qdrant alone). ``rerank_enabled``
     overrides the E3 cross-encoder toggle; ``None`` (the default) reads
-    ``Settings().rerank_enabled`` per call.
+    ``Settings().rerank_enabled`` per call. ``qu_model``/``qu_effort`` are
+    passed through to :func:`~legger.chat.understanding.understand_query`
+    (the beta-testing per-conversation overrides; ``None`` = today's
+    defaults).
 
     This is a blocking call (Qdrant REST, Postgres, Anthropic, embedding):
     in async contexts run it in a threadpool (e.g.
@@ -178,7 +183,9 @@ def retrieve(
     # 1. Query understanding (never raises by contract; guarded anyway).
     analysis: QueryAnalysis | None
     try:
-        analysis = understand_query(messages, anthropic_client=anthropic_client)
+        analysis = understand_query(
+            messages, anthropic_client=anthropic_client, model=qu_model, effort=qu_effort
+        )
     except Exception:
         logger.warning(
             "understand_query raised despite its no-raise contract; using the verbatim message",

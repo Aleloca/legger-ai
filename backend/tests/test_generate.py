@@ -195,3 +195,47 @@ def test_model_sonnet_constant() -> None:
     # Verified against platform.claude.com models overview (2026-06-10):
     # dateless pinned snapshot, no date suffix.
     assert MODEL_SONNET == "claude-sonnet-4-6"
+
+
+# --- beta-testing model/effort overrides ----------------------------------------
+
+
+def _call_kwargs(fake: FakeAnthropic, **overrides: Any) -> dict[str, Any]:
+    messages = [{"role": "user", "content": "q"}]
+    list(stream_answer(messages, [make_hit()], anthropic_client=fake, **overrides))
+    assert len(fake.calls) == 1
+    return fake.calls[0]
+
+
+def test_default_call_has_no_output_config() -> None:
+    # No config sent: today's behavior byte-for-byte (sonnet, temp 0.2,
+    # no explicit effort field).
+    call = _call_kwargs(FakeAnthropic())
+    assert call["model"] == MODEL_SONNET
+    assert call["temperature"] == generate_mod.TEMPERATURE
+    assert "output_config" not in call
+
+
+def test_model_override_with_effort() -> None:
+    call = _call_kwargs(FakeAnthropic(), model="claude-sonnet-4-6", effort="low")
+    assert call["model"] == "claude-sonnet-4-6"
+    assert call["temperature"] == generate_mod.TEMPERATURE
+    assert call["output_config"] == {"effort": "low"}
+
+
+def test_opus_48_call_omits_temperature() -> None:
+    # temperature is REMOVED on opus-4-8 (400 if sent): the call must not
+    # carry it, with or without effort.
+    call = _call_kwargs(FakeAnthropic(), model="claude-opus-4-8", effort="max")
+    assert call["model"] == "claude-opus-4-8"
+    assert "temperature" not in call
+    assert call["output_config"] == {"effort": "max"}
+
+
+def test_haiku_call_omits_output_config() -> None:
+    # output_config.effort on haiku-4-5 is a 400: a requested effort is
+    # dropped, temperature stays.
+    call = _call_kwargs(FakeAnthropic(), model="claude-haiku-4-5", effort="high")
+    assert call["model"] == "claude-haiku-4-5"
+    assert call["temperature"] == generate_mod.TEMPERATURE
+    assert "output_config" not in call
