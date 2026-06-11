@@ -27,6 +27,7 @@ def make_hit(
     chunk_id: str = "codice-civile#art-2051#0",
     act_ref: str = "codice-civile",
     article: str = "2051",
+    commi: list[str] | None = None,
 ) -> SearchHit:
     return SearchHit(
         score=0.9,
@@ -37,7 +38,7 @@ def make_hit(
         header="Codice civile\nArt. 2051",
         text="Codice civile\nArt. 2051\n\nCiascuno e' responsabile del danno.",
         vigenza="vigente",
-        payload={},
+        payload={"commi": commi or []},
     )
 
 
@@ -154,7 +155,11 @@ def test_event_sequence_and_payloads(client: TestClient, monkeypatch: pytest.Mon
 def test_citation_verified_true_with_hit_metadata(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub_calls(monkeypatch, deltas=["[[codice-civile|art.2051|c.1]]"])
+    stub_calls(
+        monkeypatch,
+        result=make_result([make_hit(commi=["1"])]),
+        deltas=["[[codice-civile|art.2051|c.1]]"],
+    )
     events = parse_sse(client.post("/chat", json=BODY).text)
     citation = next(data for name, data in events if name == "citation")
     assert citation == {
@@ -165,6 +170,7 @@ def test_citation_verified_true_with_hit_metadata(
         "title": "Codice civile",
         "vigenza": "vigente",
         "verified": True,
+        "reason": "ok",
     }
 
 
@@ -176,9 +182,29 @@ def test_citation_verified_false_when_not_retrieved(
     events = parse_sse(client.post("/chat", json=BODY).text)
     citation = next(data for name, data in events if name == "citation")
     assert citation["verified"] is False
+    assert citation["reason"] == "act_not_in_context"
     assert citation["title"] is None
     assert citation["vigenza"] is None
     assert citation["act_ref"] == "codice-penale"
+
+
+def test_citation_comma_not_in_context_is_advisory(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Right act+article but a comma the hits' commi lists do not confirm:
+    # verified stays True (comma granularity is advisory, see F3 guardrail),
+    # reason carries the nuance, and enrichment still uses the article match.
+    stub_calls(
+        monkeypatch,
+        result=make_result([make_hit(commi=["1", "2"])]),
+        deltas=["[[codice-civile|art.2051|c.7]]"],
+    )
+    events = parse_sse(client.post("/chat", json=BODY).text)
+    citation = next(data for name, data in events if name == "citation")
+    assert citation["verified"] is True
+    assert citation["reason"] == "comma_not_in_context"
+    assert citation["title"] == "Codice civile"
+    assert citation["vigenza"] == "vigente"
 
 
 def test_marker_split_across_deltas_is_one_token_and_one_citation(

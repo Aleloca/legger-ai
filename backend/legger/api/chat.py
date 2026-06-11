@@ -24,13 +24,20 @@ vigenza, anchor}]}``
     as the matching citation events arrive.
 
 ``event: citation`` — data ``{marker, act_ref, article, comma, title,
-vigenza, verified}``
-    Emitted right after the token event carrying a contract-format marker.
-    ``verified`` is true when ``(act_ref, article)`` is present in the
-    retrieval hits (the basic F3 guardrail — F3 extends this);
-    ``title``/``vigenza`` come from the matching hit, or are ``null`` for
-    unverified citations. A bracket pair that does not parse as a marker
-    gets no citation event (it flows through as plain token text).
+vigenza, verified, reason}``
+    Emitted right after the token event carrying a contract-format marker,
+    with the verdict of the citation guardrail
+    (:func:`legger.chat.guardrail.check_citation`). ``verified`` is false
+    only when the cited act or article was NOT in the retrieval context
+    (``reason`` is ``act_not_in_context`` / ``article_not_in_context``) —
+    the UI should flag those. ``reason`` is ``comma_not_in_context`` when
+    the act+article matched but the marker's comma could not be confirmed
+    in the hits' commi lists: this is advisory (``verified`` stays true,
+    the lists are structurally incomplete) and the UI may render a softer
+    hint. Otherwise ``reason`` is ``ok``. ``title``/``vigenza`` come from
+    the matching hit, or are ``null`` when ``verified`` is false. A
+    bracket pair that does not parse as a marker gets no citation event
+    (it flows through as plain token text).
 
 ``event: done`` — data ``{"stop_reason": str|null, "truncated": bool}``
     End of a successful answer. ``stop_reason`` is the model's stop reason
@@ -81,6 +88,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from legger.api.acts import anchor_from_chunk_segment
 from legger.chat.generate import stream_answer
+from legger.chat.guardrail import check_citation
 from legger.chat.stream import MarkerParser, MarkerPiece, Piece, parse_marker
 from legger.retrieval.pipeline import retrieve
 
@@ -155,16 +163,14 @@ def _sources_payload(result: RetrievalResult) -> list[dict]:
     ]
 
 
-def _piece_events(
-    piece: Piece, hits_by_provision: dict[tuple[str, str], SearchHit]
-) -> Iterator[str]:
+def _piece_events(piece: Piece, hits: list[SearchHit]) -> Iterator[str]:
     """token (+ citation) events for one parsed stream piece."""
     if isinstance(piece, MarkerPiece):
         yield _sse("token", {"text": piece.raw})
         parsed = parse_marker(piece.raw)
         if parsed is None:
             return  # not contract format: plain text, no citation event
-        hit = hits_by_provision.get((parsed.act_ref, parsed.article))
+        check = check_citation(parsed, hits)
         yield _sse(
             "citation",
             {
@@ -172,9 +178,10 @@ def _piece_events(
                 "act_ref": parsed.act_ref,
                 "article": parsed.article,
                 "comma": parsed.comma,
-                "title": hit.act_title if hit is not None else None,
-                "vigenza": hit.vigenza if hit is not None else None,
-                "verified": hit is not None,
+                "title": check.hit.act_title if check.hit is not None else None,
+                "vigenza": check.hit.vigenza if check.hit is not None else None,
+                "verified": check.verified,
+                "reason": check.reason,
             },
         )
     elif piece.text:
@@ -206,10 +213,6 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
         yield _sse("error", {"message": ERROR_MESSAGE})
         return
 
-    hits_by_provision: dict[tuple[str, str], SearchHit] = {}
-    for hit in result.hits:
-        hits_by_provision.setdefault((hit.act_ref, hit.article), hit)
-
     parser = MarkerParser()
     stop_reason: str | None = None
     generation = stream_answer(messages, result.hits, anthropic_client=state.anthropic)
@@ -222,9 +225,9 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
                 stop_reason = stop.value  # stream_answer's return value
                 break
             for piece in parser.feed(delta):
-                yield from _piece_events(piece, hits_by_provision)
+                yield from _piece_events(piece, result.hits)
         for piece in parser.flush():
-            yield from _piece_events(piece, hits_by_provision)
+            yield from _piece_events(piece, result.hits)
     except Exception:
         logger.exception("/chat generation failed mid-stream")
         yield _sse("error", {"message": ERROR_MESSAGE})
