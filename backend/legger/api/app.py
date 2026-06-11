@@ -13,35 +13,51 @@ URL) instead of mutating a module global. The module-level ``app`` is the
 production instance uvicorn imports.
 
 Shared clients live on ``app.state`` (created once in the lifespan, reused
-by every request — F2's /chat will pick them up from there too):
+by every request):
 
 - ``app.state.settings``: the resolved Settings.
 - ``app.state.engine``: pooled SQLAlchemy engine (lazy: no connection is
   opened until the first query, so app startup never blocks on Postgres).
 - ``app.state.qdrant``: QdrantClient with the search-path timeout
-  (:data:`~legger.retrieval.search.SEARCH_CLIENT_TIMEOUT_S`, 15 s) — unused
-  by F1 itself, created here so F2/F4 inherit a single shared client.
+  (:data:`~legger.retrieval.search.SEARCH_CLIENT_TIMEOUT_S`, 15 s).
+- ``app.state.anthropic``: shared Anthropic client (F2 /chat: query
+  understanding + generation).
+- ``app.state.embedder``: the query embedder (:data:`EMBEDDER_NAME`).
+  Construction is API-light (no model download — the Voyage client is
+  lazy), but it fails fast on a missing VOYAGE_API_KEY; that failure is
+  caught and logged so the app still starts and serves /acts — /chat then
+  answers with an SSE ``error`` event (``app.state.embedder is None``).
 """
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+from anthropic import Anthropic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 
 from legger.api.acts import router as acts_router
+from legger.api.chat import router as chat_router
 from legger.db import get_engine
+from legger.retrieval.embedders import get_embedder
 from legger.retrieval.search import SEARCH_CLIENT_TIMEOUT_S
 from legger.settings import Settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+logger = logging.getLogger(__name__)
+
 #: Next.js dev server origin (G1). Production origins are an H1/H2 concern.
 CORS_ORIGINS = ["http://localhost:3000"]
+
+#: Query embedder for /chat retrieval — must match how the collection in
+#: ``Settings.qdrant_collection`` was indexed (D2 bootstrap default).
+EMBEDDER_NAME = "voyage-4-large"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -55,14 +71,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.qdrant = QdrantClient(
             url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S
         )
+        app.state.anthropic = Anthropic(api_key=settings.anthropic_api_key)
+        try:
+            app.state.embedder = get_embedder(EMBEDDER_NAME)
+        except Exception:
+            # Typically a missing VOYAGE_API_KEY: keep serving /acts, let
+            # /chat degrade to its error event (see legger.api.chat).
+            logger.warning(
+                "embedder %r unavailable; /chat will return error events",
+                EMBEDDER_NAME,
+                exc_info=True,
+            )
+            app.state.embedder = None
         try:
             yield
         finally:
-            # Nested so the engine is disposed even if the qdrant close raises.
+            # Nested so every client is released even if an earlier close raises.
             try:
-                app.state.qdrant.close()
+                app.state.anthropic.close()
             finally:
-                app.state.engine.dispose()
+                try:
+                    app.state.qdrant.close()
+                finally:
+                    app.state.engine.dispose()
 
     app = FastAPI(title="legger.ai API", lifespan=lifespan)
     app.add_middleware(
@@ -72,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(acts_router)
+    app.include_router(chat_router)
     return app
 
 

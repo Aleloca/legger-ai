@@ -13,6 +13,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://legger:legger@localhost:5432/legger"
     qdrant_url: str = "http://localhost:6333"
+    #: Qdrant collection served by the API (/chat retrieval). "norme" is the
+    #: D2 bootstrap default; override via QDRANT_COLLECTION (e.g.
+    #: "norme_voyage4large" for the completed bootstrap collection).
+    qdrant_collection: str = "norme"
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
     corpus_path: Path = Path("../italia-corpus")
