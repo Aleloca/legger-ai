@@ -55,6 +55,7 @@ def compact_config(config: dict | None) -> str:
 
 def _truncate(text: str, width: int) -> str:
     flat = " ".join(text.split())  # newlines would break the table layout
+    flat = "".join(ch for ch in flat if ch >= " ")  # no terminal escape sequences
     return flat if len(flat) <= width else flat[: width - 1] + "…"
 
 

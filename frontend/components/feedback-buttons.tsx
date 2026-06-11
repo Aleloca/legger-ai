@@ -68,8 +68,12 @@ export function FeedbackButtons({
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [reason, setReason] = React.useState("");
   const [failed, setFailed] = React.useState(false);
-  // Lazy initializer: deciso una volta per messaggio, al primo render.
-  const [showNotice] = React.useState(claimPrivacyNotice);
+  const [showNotice, setShowNotice] = React.useState(false);
+  // Il claim va in un effect, mai nel render: sotto StrictMode (dev) il
+  // doppio render brucerebbe il flag e la nota non comparirebbe mai.
+  React.useEffect(() => {
+    if (claimPrivacyNotice()) setShowNotice(true);
+  }, []);
 
   const send = async (rating: 1 | -1, reasonText?: string) => {
     setPhase("sending");

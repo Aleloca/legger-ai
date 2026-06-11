@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 
 from legger import cli
 from legger.db import get_engine, insert_feedback, message_feedback
-from legger.feedback_report import build_report, compact_config
+from legger.feedback_report import _truncate, build_report, compact_config
 
 # ---------------------------------------------------------------------------
 # compact_config (no DB)
@@ -44,6 +44,11 @@ def test_compact_config_partial() -> None:
         compact_config({"answer_model": "claude-haiku-4-5", "answer_effort": None})
         == "haiku-4-5 + qu:default"
     )
+
+
+def test_truncate_strips_control_chars() -> None:
+    # Terminal escape sequences in question/reason must never reach the CLI.
+    assert _truncate("ciao\x1b[31mrosso\x07 fine", 120) == "ciao[31mrosso fine"
 
 
 # ---------------------------------------------------------------------------
