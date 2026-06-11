@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Sans, Literata } from "next/font/google";
 import "./globals.css";
 
+import { SiteFooter } from "@/components/site-footer";
+
 /**
  * Tipografia "editoriale italiano raffinato":
  * - Fraunces (display, optical sizing): titoli e intestazioni dei pannelli.
@@ -43,12 +45,7 @@ export default function RootLayout({
     >
       <body className="flex h-dvh flex-col">
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-        <footer className="border-t border-border px-6 py-3">
-          <p className="mx-auto max-w-3xl text-center text-xs leading-relaxed text-muted-foreground">
-            Strumento informativo, non costituisce consulenza legale. Fa fede
-            la Gazzetta Ufficiale.
-          </p>
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );
