@@ -43,6 +43,7 @@ from qdrant_client import QdrantClient
 
 from legger.api.acts import router as acts_router
 from legger.api.chat import router as chat_router
+from legger.api.search import router as search_router
 from legger.db import get_engine
 from legger.retrieval.embedders import get_embedder
 from legger.retrieval.search import SEARCH_CLIENT_TIMEOUT_S
@@ -78,7 +79,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Typically a missing VOYAGE_API_KEY: keep serving /acts, let
             # /chat degrade to its error event (see legger.api.chat).
             logger.warning(
-                "embedder %r unavailable; /chat will return error events",
+                "embedder %r unavailable; /chat will return error events and "
+                "/search loses its semantic tier",
                 settings.embedder_name,
                 exc_info=True,
             )
@@ -104,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(acts_router)
     app.include_router(chat_router)
+    app.include_router(search_router)
     return app
 
 
