@@ -6,6 +6,9 @@ out. The invariant test re-checks every case for byte-exactness: the
 concatenation of all piece payloads equals the concatenation of the input.
 """
 
+import random
+from itertools import pairwise
+
 import pytest
 
 from legger.chat.stream import (
@@ -123,6 +126,24 @@ def test_buffer_cap_flushes_runaway_marker_as_text() -> None:
     assert joined == "".join(deltas)
 
 
+def test_inner_marker_inside_closed_unparseable_pair_is_swallowed() -> None:
+    """Pinned intentional behavior (see the comment in MarkerParser.feed).
+
+    When a bracket pair CLOSES within the cap but is not contract format,
+    an inner ``[[...]]`` hiding inside it is NOT rescanned: the whole pair
+    is one MarkerPiece, parse_marker rejects it, and downstream it flows as
+    plain text (byte-exact) with no citation event for the inner marker.
+    """
+    text = "[[nota [[codice-civile|art.1]]"
+    pieces = run_parser([text])
+    assert pieces == [MarkerPiece("[[nota [[codice-civile|art.1]]")]
+    # Unparseable -> the API layer emits it as token text only, no citation.
+    assert parse_marker(pieces[0].raw) is None
+    # Byte-exact: nothing is lost or reordered.
+    joined = "".join(p.raw if isinstance(p, MarkerPiece) else p.text for p in pieces)
+    assert joined == text
+
+
 def test_buffer_cap_recovers_inner_marker() -> None:
     """A real marker hiding inside a runaway buffer is recovered after the cap."""
     filler = "y" * (MARKER_BUFFER_CAP + 10)
@@ -131,6 +152,44 @@ def test_buffer_cap_recovers_inner_marker() -> None:
     assert MarkerPiece("[[codice-civile|art.7]]") in pieces
     joined = "".join(p.raw if isinstance(p, MarkerPiece) else p.text for p in pieces)
     assert joined == text
+
+
+# --- deterministic seeded fuzz: random re-chunking ----------------------------
+
+#: Fixed seed + iteration count: the exact same chunkings every run, so a
+#: failure here is reproducible and bisectable (not a flaky fuzz).
+FUZZ_SEED = 20260611
+FUZZ_ITERATIONS = 50
+
+FUZZ_CORPORA = [
+    "Vedi [[codice-civile|art.2051]] e [[codice-penale|art.52|c.2]] in tema di custodia.",
+    "Testo con [ finto, [[non un marker]] e poi [[dlgs-285-1992|art.186|c.2]] in coda [",
+    "[[" + "x" * (MARKER_BUFFER_CAP + 25) + " runaway, poi [[codice-civile|art.7]] fine.",
+]
+
+
+def _marker_count(pieces: list[TextPiece | MarkerPiece]) -> int:
+    return sum(isinstance(p, MarkerPiece) for p in pieces)
+
+
+@pytest.mark.parametrize("text", FUZZ_CORPORA, ids=["two-markers", "false-alarms", "runaway"])
+def test_fuzz_rechunking_byte_exact_and_marker_count_stable(text: str) -> None:
+    """Property: chunk boundaries never change the output.
+
+    For 50 seeded-random re-chunkings of each corpus string, the pieces
+    reconstruct the input byte-exactly and the MarkerPiece count equals the
+    single-delta parse's count.
+    """
+    rng = random.Random(FUZZ_SEED)
+    expected_markers = _marker_count(run_parser([text]))
+    for _ in range(FUZZ_ITERATIONS):
+        cuts = sorted(rng.randint(0, len(text)) for _ in range(rng.randint(0, 12)))
+        bounds = [0, *cuts, len(text)]
+        deltas = [text[a:b] for a, b in pairwise(bounds)]
+        pieces = run_parser(deltas)
+        joined = "".join(p.raw if isinstance(p, MarkerPiece) else p.text for p in pieces)
+        assert joined == text
+        assert _marker_count(pieces) == expected_markers
 
 
 # --- parse_marker -------------------------------------------------------------

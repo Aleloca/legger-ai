@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     #: D2 bootstrap default; override via QDRANT_COLLECTION (e.g.
     #: "norme_voyage4large" for the completed bootstrap collection).
     qdrant_collection: str = "norme"
+    #: Query embedder used by /chat retrieval. MUST match how the collection
+    #: in ``qdrant_collection`` was indexed (same model => same vector space);
+    #: override the pair together (EMBEDDER_NAME + QDRANT_COLLECTION).
+    embedder_name: str = "voyage-4-large"
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
     corpus_path: Path = Path("../italia-corpus")

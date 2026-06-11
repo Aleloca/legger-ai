@@ -94,6 +94,14 @@ class MarkerParser:
             if self._in_marker:
                 close = self._buf.find(_CLOSE, len(_OPEN))
                 if close != -1 and close + len(_CLOSE) <= MARKER_BUFFER_CAP:
+                    # Intentional: the first "]]" within the cap closes the
+                    # pair, even if the buffer contains an inner "[[" (e.g.
+                    # "[[nota [[codice-civile|art.1]]"). The whole pair comes
+                    # out as one MarkerPiece; it fails parse_marker, so it
+                    # flows downstream as plain text (byte-exact) and the
+                    # inner marker gets no citation event. Rescanning inside
+                    # a closed pair would emit text out of order; only the
+                    # runaway (never-closing) branch below rescans.
                     out.append(MarkerPiece(self._buf[: close + len(_CLOSE)]))
                     self._buf = self._buf[close + len(_CLOSE) :]
                     self._in_marker = False

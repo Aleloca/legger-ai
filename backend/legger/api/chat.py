@@ -32,9 +32,11 @@ vigenza, verified}``
     unverified citations. A bracket pair that does not parse as a marker
     gets no citation event (it flows through as plain token text).
 
-``event: done`` — data ``{"stop_reason": "...", "truncated": bool}``
-    End of a successful answer. ``truncated`` is true when the model hit
-    the token cap (``stop_reason == "max_tokens"``): the answer ends
+``event: done`` — data ``{"stop_reason": str|null, "truncated": bool}``
+    End of a successful answer. ``stop_reason`` is the model's stop reason
+    (e.g. ``"end_turn"``), or ``null`` when the generation stream ended
+    without reporting one. ``truncated`` is true when the model hit the
+    token cap (``stop_reason == "max_tokens"``): the answer ends
     mid-sentence and the UI should say so.
 
 ``event: error`` — data ``{"message": "..."}``
@@ -42,11 +44,20 @@ vigenza, verified}``
     generation fails. The message is user-safe Italian (no internals — the
     exception is logged server-side). No ``done`` event follows.
 
-Heartbeats: comment lines (``: ping``) may appear anywhere in the stream;
-SSE parsers ignore them by spec. They are emitted on a best-effort basis
-when more than ~15s pass between deltas, to keep idle proxies from closing
-the connection; a fully blocked upstream call (retrieval) cannot be
-interleaved from this sync generator, so do not rely on a fixed cadence.
+DEPLOYMENT NOTE (H1/H2) — no in-band heartbeats
+-----------------------------------------------
+
+This endpoint emits NO heartbeats: the generator is a sync pipeline that
+is fully blocked while retrieval and the model's first token are in
+flight, so nothing can be interleaved during exactly the windows where a
+keep-alive would matter. The longest silent stretches are retrieval plus
+time-to-first-token (tens of seconds under load).
+
+Any reverse proxy in front of ``/chat`` MUST therefore allow at least 60s
+of response idle time, e.g. nginx ``proxy_read_timeout 60s;`` (and
+``proxy_buffering off;``, which the ``X-Accel-Buffering: no`` header also
+requests), or the equivalent for other proxies. Otherwise the proxy will
+cut the stream mid-answer during a silent window.
 
 Design notes
 ------------
@@ -62,7 +73,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Request
@@ -87,11 +97,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-#: Emit a ``: ping`` comment when this many seconds pass without data.
-HEARTBEAT_SECONDS = 15.0
-#: Module-level alias so tests can fake the clock without touching the
-#: global time module (anyio uses time.monotonic too).
-_monotonic = time.monotonic
 #: Request-body bounds (validated by pydantic -> 422).
 MAX_TURNS = 20
 MAX_CONTENT_CHARS = 8000
@@ -150,7 +155,9 @@ def _sources_payload(result: RetrievalResult) -> list[dict]:
     ]
 
 
-def _piece_events(piece: Piece, hits_by_provision: dict[tuple[str, str], SearchHit]) -> Iterator[str]:
+def _piece_events(
+    piece: Piece, hits_by_provision: dict[tuple[str, str], SearchHit]
+) -> Iterator[str]:
     """token (+ citation) events for one parsed stream piece."""
     if isinstance(piece, MarkerPiece):
         yield _sse("token", {"text": piece.raw})
@@ -199,34 +206,35 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
         yield _sse("error", {"message": ERROR_MESSAGE})
         return
 
-    yield _sse("sources", {"sources": _sources_payload(result)})
-
     hits_by_provision: dict[tuple[str, str], SearchHit] = {}
     for hit in result.hits:
         hits_by_provision.setdefault((hit.act_ref, hit.article), hit)
 
     parser = MarkerParser()
     stop_reason: str | None = None
-    last_emit = _monotonic()
     generation = stream_answer(messages, result.hits, anthropic_client=state.anthropic)
     try:
+        yield _sse("sources", {"sources": _sources_payload(result)})
         while True:
             try:
                 delta = next(generation)
             except StopIteration as stop:
                 stop_reason = stop.value  # stream_answer's return value
                 break
-            if _monotonic() - last_emit >= HEARTBEAT_SECONDS:
-                yield ": ping\n\n"
             for piece in parser.feed(delta):
                 yield from _piece_events(piece, hits_by_provision)
-            last_emit = _monotonic()
         for piece in parser.flush():
             yield from _piece_events(piece, hits_by_provision)
     except Exception:
         logger.exception("/chat generation failed mid-stream")
         yield _sse("error", {"message": ERROR_MESSAGE})
         return
+    finally:
+        # Deterministic teardown: close() runs stream_answer's cleanup (the
+        # Anthropic stream context manager) right now, both on normal exit
+        # and when the client disconnects (GeneratorExit at a yield above),
+        # instead of whenever the abandoned generator is garbage-collected.
+        generation.close()
 
     yield _sse("done", {"stop_reason": stop_reason, "truncated": stop_reason == "max_tokens"})
 
@@ -234,9 +242,7 @@ def _event_stream(messages: list[Message], app: FastAPI) -> Iterator[str]:
 @router.post("/chat")
 def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     """Stream the grounded answer for a conversation as SSE."""
-    messages: list[Message] = [
-        {"role": m.role, "content": m.content} for m in payload.messages
-    ]
+    messages: list[Message] = [{"role": m.role, "content": m.content} for m in payload.messages]
     return StreamingResponse(
         _event_stream(messages, request.app),
         media_type="text/event-stream",

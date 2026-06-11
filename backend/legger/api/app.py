@@ -22,7 +22,8 @@ by every request):
   (:data:`~legger.retrieval.search.SEARCH_CLIENT_TIMEOUT_S`, 15 s).
 - ``app.state.anthropic``: shared Anthropic client (F2 /chat: query
   understanding + generation).
-- ``app.state.embedder``: the query embedder (:data:`EMBEDDER_NAME`).
+- ``app.state.embedder``: the query embedder
+  (``Settings.embedder_name`` — must match the indexed collection).
   Construction is API-light (no model download — the Voyage client is
   lazy), but it fails fast on a missing VOYAGE_API_KEY; that failure is
   caught and logged so the app still starts and serves /acts — /chat then
@@ -55,10 +56,6 @@ logger = logging.getLogger(__name__)
 #: Next.js dev server origin (G1). Production origins are an H1/H2 concern.
 CORS_ORIGINS = ["http://localhost:3000"]
 
-#: Query embedder for /chat retrieval — must match how the collection in
-#: ``Settings.qdrant_collection`` was indexed (D2 bootstrap default).
-EMBEDDER_NAME = "voyage-4-large"
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the legger API app around *settings* (default: env-resolved)."""
@@ -68,18 +65,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = settings
         app.state.engine = get_engine(settings)
-        app.state.qdrant = QdrantClient(
-            url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S
-        )
+        app.state.qdrant = QdrantClient(url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S)
+        if not settings.anthropic_api_key:
+            # Symmetric with the embedder degrade below: the app still
+            # starts and serves /acts, but /chat calls will fail at the
+            # Anthropic API and surface SSE error events.
+            logger.warning("ANTHROPIC_API_KEY is empty; /chat will return error events")
         app.state.anthropic = Anthropic(api_key=settings.anthropic_api_key)
         try:
-            app.state.embedder = get_embedder(EMBEDDER_NAME)
+            app.state.embedder = get_embedder(settings.embedder_name)
         except Exception:
             # Typically a missing VOYAGE_API_KEY: keep serving /acts, let
             # /chat degrade to its error event (see legger.api.chat).
             logger.warning(
                 "embedder %r unavailable; /chat will return error events",
-                EMBEDDER_NAME,
+                settings.embedder_name,
                 exc_info=True,
             )
             app.state.embedder = None

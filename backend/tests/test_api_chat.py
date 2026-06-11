@@ -7,6 +7,7 @@ Voyage key). TestClient drains the StreamingResponse, so assertions parse
 the full SSE transcript from ``response.text``.
 """
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -20,8 +21,6 @@ from legger.chat.understanding import QueryAnalysis
 from legger.retrieval.pipeline import RetrievalResult, SourceInfo
 from legger.retrieval.search import SearchHit
 from legger.settings import Settings
-
-import json
 
 
 def make_hit(
@@ -318,16 +317,29 @@ def test_twenty_turns_is_accepted(client: TestClient, monkeypatch: pytest.Monkey
     assert response.status_code == 200
 
 
-# --- heartbeat code path -----------------------------------------------------------
+# --- generator teardown --------------------------------------------------------
 
 
-def test_heartbeat_emitted_when_deltas_are_slow(
+def test_generation_closed_deterministically(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Force the monotonic clock past the threshold: a `: ping` comment appears."""
-    stub_calls(monkeypatch, deltas=["a", "b"])
-    ticks = iter([0.0, 100.0, 100.0, 200.0, 200.0])
-    monkeypatch.setattr(chat_api, "_monotonic", lambda: next(ticks, 300.0))
+    """The stream_answer generator's cleanup runs by end-of-response.
+
+    chat.py wraps the generation loop in try/finally with generation.close(),
+    so the Anthropic stream teardown is deterministic (also on client
+    disconnect) instead of waiting for garbage collection.
+    """
+    closed: list[bool] = []
+
+    def tracked_stream(messages: list[dict], hits: list[SearchHit], **kwargs: Any):
+        try:
+            yield "Risposta."
+        finally:
+            closed.append(True)
+        return "end_turn"
+
+    stub_calls(monkeypatch)
+    monkeypatch.setattr(chat_api, "stream_answer", tracked_stream)
     response = client.post("/chat", json=BODY)
-    assert ": ping" in response.text
-    assert parse_sse(response.text)[-1][0] == "done"  # stream still well-formed
+    assert closed == [True]
+    assert parse_sse(response.text)[-1][0] == "done"
