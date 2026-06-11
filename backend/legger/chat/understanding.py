@@ -27,6 +27,8 @@ from legger.chat.generate import last_user_message
 if TYPE_CHECKING:
     from anthropic import Anthropic
 
+    from legger.chat.types import Message
+
 logger = logging.getLogger(__name__)
 
 #: Current Claude Haiku id, verified against the models overview on
@@ -161,7 +163,7 @@ SYSTEM_PROMPT = (
 _ROLE_LABELS = {"user": "utente", "assistant": "assistente"}
 
 
-def _format_input(messages: list[dict]) -> str:
+def _format_input(messages: list[Message]) -> str:
     """Compact transcript: last :data:`HISTORY_TURNS` turns + current message.
 
     The current message is the LAST user turn; anything after it (would be a
@@ -192,7 +194,7 @@ def _format_input(messages: list[dict]) -> str:
     )
 
 
-def understand_query(messages: list[dict], *, anthropic_client: Anthropic) -> QueryAnalysis:
+def understand_query(messages: list[Message], *, anthropic_client: Anthropic) -> QueryAnalysis:
     """Analyze the current user message for retrieval; NEVER raises for QU.
 
     One Haiku call with tool use *forzato* on ``analyze_query``; the tool

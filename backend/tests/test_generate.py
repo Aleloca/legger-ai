@@ -37,11 +37,20 @@ def make_hit(
     )
 
 
+class FakeFinalMessage:
+    def __init__(self, stop_reason: str) -> None:
+        self.stop_reason = stop_reason
+
+
 class FakeStream:
     """Stands in for the context manager returned by messages.stream()."""
 
-    def __init__(self, deltas: list[str]) -> None:
+    def __init__(self, deltas: list[str], stop_reason: str = "end_turn") -> None:
         self.text_stream = iter(deltas)
+        self._stop_reason = stop_reason
+
+    def get_final_message(self) -> FakeFinalMessage:
+        return FakeFinalMessage(self._stop_reason)
 
     def __enter__(self) -> "FakeStream":
         return self
@@ -53,16 +62,17 @@ class FakeStream:
 class FakeAnthropic:
     """Records the kwargs of every messages.stream() call."""
 
-    def __init__(self, deltas: list[str] | None = None) -> None:
+    def __init__(self, deltas: list[str] | None = None, stop_reason: str = "end_turn") -> None:
         self.calls: list[dict[str, Any]] = []
         self._deltas = deltas if deltas is not None else ["Risposta ", "grounded."]
+        self._stop_reason = stop_reason
         outer = self
 
         class _Messages:
             @contextmanager
             def stream(self, **kwargs: Any):
                 outer.calls.append(kwargs)
-                yield FakeStream(outer._deltas)
+                yield FakeStream(outer._deltas, outer._stop_reason)
 
         self.messages = _Messages()
 
@@ -153,6 +163,32 @@ def test_stream_answer_message_assembly() -> None:
     # Context block: formatted hits inside <contesto>, after the stable prompt.
     assert "<contesto>" in system[1]["text"]
     assert format_context(hits) in system[1]["text"]
+
+
+def _drive(gen) -> tuple[list[str], str | None]:
+    """Exhaust a stream_answer generator, capturing deltas + return value."""
+    deltas: list[str] = []
+    while True:
+        try:
+            deltas.append(next(gen))
+        except StopIteration as stop:
+            return deltas, stop.value
+
+
+def test_stream_answer_returns_stop_reason() -> None:
+    fake = FakeAnthropic(stop_reason="end_turn")
+    gen = stream_answer([{"role": "user", "content": "q"}], [make_hit()], anthropic_client=fake)
+    deltas, stop_reason = _drive(gen)
+    assert deltas == ["Risposta ", "grounded."]
+    assert stop_reason == "end_turn"
+
+
+def test_stream_answer_signals_truncation_via_stop_reason() -> None:
+    fake = FakeAnthropic(deltas=["Risposta tron"], stop_reason="max_tokens")
+    gen = stream_answer([{"role": "user", "content": "q"}], [make_hit()], anthropic_client=fake)
+    deltas, stop_reason = _drive(gen)
+    assert deltas == ["Risposta tron"]
+    assert stop_reason == "max_tokens"
 
 
 def test_model_sonnet_constant() -> None:

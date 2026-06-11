@@ -75,6 +75,7 @@ if TYPE_CHECKING:
     from qdrant_client import QdrantClient
     from sqlalchemy import Engine
 
+    from legger.chat.types import Message
     from legger.retrieval.embedders import Embedder
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class RetrievalResult(BaseModel):
     query_analysis: QueryAnalysis | None  # transparency/debug; None = QU crashed
 
 
-def _assistant_marker_acts(messages: list[dict]) -> list[str]:
+def _assistant_marker_acts(messages: list[Message]) -> list[str]:
     """Distinct act_refs cited by the LAST assistant turn, in marker order."""
     for message in reversed(messages):
         if message["role"] == "assistant":
@@ -119,7 +120,7 @@ def _assistant_marker_acts(messages: list[dict]) -> list[str]:
     return []
 
 
-def _bind_unbound_refs(refs: list[ExtractedRef], messages: list[dict]) -> list[ExtractedRef]:
+def _bind_unbound_refs(refs: list[ExtractedRef], messages: list[Message]) -> list[ExtractedRef]:
     """Bind ``act_ref=None`` article refs from context, or drop them.
 
     Candidate acts come from the other extracted refs first (the same message
@@ -145,7 +146,7 @@ def _bind_unbound_refs(refs: list[ExtractedRef], messages: list[dict]) -> list[E
 
 
 def retrieve(
-    messages: list[dict],
+    messages: list[Message],
     *,
     qdrant_client: QdrantClient,
     engine: Engine | None,

@@ -19,10 +19,11 @@ from typing import TYPE_CHECKING
 from legger.chat.prompts import SYSTEM_PROMPT, format_context
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
     from anthropic import Anthropic
 
+    from legger.chat.types import Message
     from legger.retrieval.search import SearchHit
 
 #: Current Claude Sonnet id, verified against the models overview on
@@ -30,11 +31,11 @@ if TYPE_CHECKING:
 #: API ID and the alias — dateless pinned snapshot, do NOT append a date.
 MODEL_SONNET = "claude-sonnet-4-6"
 
-MAX_TOKENS = 1500
+MAX_TOKENS = 2048
 TEMPERATURE = 0.2
 
 
-def last_user_message(messages: list[dict]) -> str:
+def last_user_message(messages: list[Message]) -> str:
     """The content of the most recent ``user`` turn (the retrieval query)."""
     for message in reversed(messages):
         if message["role"] == "user":
@@ -43,17 +44,29 @@ def last_user_message(messages: list[dict]) -> str:
 
 
 def stream_answer(
-    messages: list[dict],
+    messages: list[Message],
     hits: list[SearchHit],
     *,
     anthropic_client: Anthropic,
-) -> Iterator[str]:
+) -> Generator[str, None, str | None]:
     """Stream the grounded answer for ``messages`` given retrieved ``hits``.
 
+    Yields text deltas, then RETURNS the final ``stop_reason`` as the
+    generator's return value (``StopIteration.value``). ``"max_tokens"``
+    means the answer was truncated mid-sentence — callers must surface that
+    (the CLI prints a truncation note, F2 sets ``truncated`` on the ``done``
+    SSE event). Capture it either by driving the generator with ``next()``
+    and catching ``StopIteration``, or with ``stop = yield from
+    stream_answer(...)`` when delegating from another generator. A plain
+    ``for`` loop silently discards it — fine only for callers that do not
+    care about truncation.
+
     The system prompt and the normative context go as two system blocks: the
-    prompt is stable (cache breakpoint on it — free now, pays off once F2
-    serves concurrent conversations), the context block changes every turn
-    and therefore sits after the breakpoint. Yields text deltas.
+    prompt is stable, the context block changes every turn and therefore
+    sits after the cache breakpoint. NOTE the breakpoint is currently a
+    no-op: SYSTEM_PROMPT is ~650 tokens, below Sonnet 4.6's 2048-token
+    minimum cacheable prefix, so it silently does not cache (no error, no
+    cost). Kept for when the prompt grows past the threshold.
     """
     context_block = (
         "Passaggi normativi recuperati per la domanda corrente "
@@ -75,3 +88,4 @@ def stream_answer(
         messages=messages,
     ) as stream:
         yield from stream.text_stream
+        return stream.get_final_message().stop_reason

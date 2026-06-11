@@ -232,8 +232,14 @@ def _run_chat(args: argparse.Namespace) -> None:
 
     Retrieval goes through the unified pipeline (Task E5): query
     understanding, explicit-reference fast path, hybrid search (+ optional
-    rerank), 1-hop citation following. Exits on EOF (Ctrl-D), Ctrl-C, or
-    `/quit`.
+    rerank), 1-hop citation following. Exits on EOF (Ctrl-D), Ctrl-C at the
+    prompt, or `/quit`.
+
+    Per-turn failures never kill the REPL: any exception in retrieval or
+    generation (Anthropic API errors, Qdrant down, Ctrl-C mid-stream) prints
+    a short notice, pops the dangling user turn from the history (so the
+    next turn does not carry a question that was never answered), and goes
+    back to the prompt.
     """
     from anthropic import Anthropic
     from qdrant_client import QdrantClient
@@ -275,20 +281,40 @@ def _run_chat(args: argparse.Namespace) -> None:
             return
 
         messages.append({"role": "user", "content": user_input})
-        result = retrieve(
-            messages,
-            qdrant_client=qdrant,
-            engine=engine,
-            anthropic_client=anthropic_client,
-            collection=args.collection,
-            embedder=embedder,
-            k=args.k,
-        )
-        answer_parts: list[str] = []
-        for delta in stream_answer(messages, result.hits, anthropic_client=anthropic_client):
-            print(delta, end="", flush=True)
-            answer_parts.append(delta)
+        try:
+            result = retrieve(
+                messages,
+                qdrant_client=qdrant,
+                engine=engine,
+                anthropic_client=anthropic_client,
+                collection=args.collection,
+                embedder=embedder,
+                k=args.k,
+            )
+            answer_parts: list[str] = []
+            stop_reason: str | None = None
+            gen = stream_answer(messages, result.hits, anthropic_client=anthropic_client)
+            # next()-driven so the generator's RETURN value (the stop_reason,
+            # see stream_answer) is captured from StopIteration.
+            while True:
+                try:
+                    delta = next(gen)
+                except StopIteration as stop:
+                    stop_reason = stop.value
+                    break
+                print(delta, end="", flush=True)
+                answer_parts.append(delta)
+        except KeyboardInterrupt:
+            print("\n[turno interrotto]")
+            messages.pop()  # drop the unanswered user turn
+            continue
+        except Exception as exc:  # anthropic.APIError, qdrant/network, ...
+            print(f"\n[errore: {type(exc).__name__}: {exc}]\nRiprova.")
+            messages.pop()  # drop the unanswered user turn
+            continue
         messages.append({"role": "assistant", "content": "".join(answer_parts)})
+        if stop_reason == "max_tokens":
+            print("\n[risposta troncata: raggiunto il limite di token]")
 
         print("\n\nFonti consultate:")
         for source in result.sources:
