@@ -155,6 +155,26 @@ describe("streamChat", () => {
     expect(calls[0].payload).toBe("valido");
   });
 
+  it("scarta frame con payload malformato (shape guard)", async () => {
+    mockFetch([
+      'event: token\ndata: {"text": 42}\n\n' + // text non-stringa
+        'event: token\ndata: {"wrong": "campo"}\n\n' + // text assente
+        'event: token\ndata: null\n\n' + // payload non-oggetto
+        'event: status\ndata: {"nope": true}\n\n' + // stage assente
+        'event: sources\ndata: {"sources": "non-array"}\n\n' +
+        'event: citation\ndata: {"verified": true}\n\n' + // marker assente
+        'event: error\ndata: {"message": 1}\n\n' + // message non-stringa: scartato, NON terminale
+        'event: token\ndata: {"text": "valido"}\n\n' +
+        'event: done\ndata: {"stop_reason": null, "truncated": false}\n\n',
+    ]);
+    const { calls, handlers } = recordingHandlers();
+    await streamChat(USER_TURN, handlers);
+    expect(calls).toEqual([
+      { name: "token", payload: "valido" },
+      { name: "done", payload: { stop_reason: null, truncated: false } },
+    ]);
+  });
+
   it("error è terminale: niente done, eventi successivi ignorati", async () => {
     mockFetch([
       'event: status\ndata: {"stage": "searching"}\n\n' +

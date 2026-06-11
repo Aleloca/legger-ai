@@ -59,7 +59,12 @@ export function MessageList({
   );
 }
 
-function MessageRow({
+/**
+ * Memoizzato: i messaggi completati mantengono la stessa identità tra un
+ * token e l'altro (chat.tsx riscrive solo l'ultimo), quindi durante lo
+ * streaming si ri-renderizza soltanto il messaggio in corso.
+ */
+const MessageRow = React.memo(function MessageRow({
   message,
   searching,
 }: {
@@ -76,7 +81,7 @@ function MessageRow({
     );
   }
   return <AssistantMessage message={message} searching={searching} />;
-}
+});
 
 function AssistantMessage({
   message,
@@ -85,6 +90,12 @@ function AssistantMessage({
   message: ChatMessage;
   searching: boolean;
 }) {
+  // G4 cablerà qui l'apertura della split-view; oggi i chip sono no-op.
+  const rendered = React.useMemo(
+    () => renderAssistantText(message.content, message.citations ?? []),
+    [message.content, message.citations],
+  );
+
   return (
     <div className="flex flex-col gap-3">
       {searching && message.content.length === 0 ? (
@@ -95,9 +106,7 @@ function AssistantMessage({
       ) : null}
 
       {message.content.length > 0 ? (
-        <div className="text-[0.9375rem] leading-7 whitespace-pre-wrap">
-          {renderAssistantText(message.content, message.citations ?? [])}
-        </div>
+        <div className="text-[0.9375rem] leading-7">{rendered}</div>
       ) : null}
 
       {message.error ? (
@@ -134,8 +143,8 @@ function EmptyState() {
         La normativa italiana, letta con rigore
       </h1>
       <p className="animate-in fade-in slide-in-from-bottom-2 max-w-prose text-sm leading-relaxed text-muted-foreground delay-200 duration-700 fill-mode-both">
-        Poni una domanda sui Codici: la risposta è fondata sui testi vigenti,
-        con citazioni puntuali agli articoli consultati.
+        Poni una domanda sulla legislazione italiana: la risposta è fondata
+        sui testi vigenti, con citazioni puntuali agli articoli consultati.
       </p>
     </div>
   );

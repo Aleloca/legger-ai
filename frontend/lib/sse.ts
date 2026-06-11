@@ -37,21 +37,33 @@ const DEFAULT_ENDPOINT = "/api/backend/chat";
 const NETWORK_ERROR_MESSAGE =
   "Impossibile contattare il servizio. Verifica la connessione e riprova.";
 
-const EVENT_NAMES = new Set<SseEvent["event"]>([
-  "status",
-  "sources",
-  "token",
-  "citation",
-  "done",
-  "error",
-]);
+/**
+ * Guardie minime sulla shape del payload, per evento: un frame con JSON
+ * valido ma payload fuori contratto viene scartato come quelli malformati,
+ * così le callback ricevono solo dati tipizzati davvero.
+ */
+const PAYLOAD_GUARDS: Record<SseEvent["event"], (data: unknown) => boolean> = {
+  status: (d) => isRecord(d) && typeof d.stage === "string",
+  sources: (d) => isRecord(d) && Array.isArray(d.sources),
+  token: (d) => isRecord(d) && typeof d.text === "string",
+  citation: (d) =>
+    isRecord(d) && typeof d.marker === "string" && typeof d.verified === "boolean",
+  done: (d) => isRecord(d) && typeof d.truncated === "boolean",
+  error: (d) => isRecord(d) && typeof d.message === "string",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 /** Decodifica un frame SSE accumulato in un evento tipizzato (o null se estraneo). */
 function decodeFrame(eventName: string, dataLines: string[]): SseEvent | null {
   if (dataLines.length === 0) return null;
-  if (!EVENT_NAMES.has(eventName as SseEvent["event"])) return null;
+  const guard = PAYLOAD_GUARDS[eventName as SseEvent["event"]];
+  if (!guard) return null; // evento fuori contratto
   try {
     const data = JSON.parse(dataLines.join("\n"));
+    if (!guard(data)) return null; // payload fuori shape: frame scartato
     return { event: eventName, data } as SseEvent;
   } catch {
     return null; // JSON malformato: frame scartato
