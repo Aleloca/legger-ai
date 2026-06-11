@@ -6,8 +6,11 @@ snippets (Codice della protezione civile 18G00011, Codice Penale 030U1398).
 Two extraction channels, URN first:
 
 - URN NIR links already present in the corpus markdown are machine-precise
-  and take PRECEDENCE: when a ``[anchor](...urn:nir:stato:...)`` link parses,
-  the ref comes from the URN and the anchor prose is NOT re-parsed.
+  and take PRECEDENCE when they pin an article (``~art``): the ref comes
+  from the URN and the anchor prose is NOT re-parsed. ACT-ONLY URNs fall
+  back to their anchor text instead, so a prose article written BEFORE the
+  link ("articolo 96 del citato [decreto legislativo n. 117 del 2017](...)")
+  binds to the anchor's estremi, not to the citing act.
 - Prose forms: date estremi ("decreto legislativo 9 aprile 2008, n. 81"),
   the E1 grammar (codici, "art. X del ..."), and the internal "di cui al
   comma 2" (act_ref=None, article=None — the citing article's own comma).
@@ -22,7 +25,9 @@ from typing import Any
 
 import pytest
 from qdrant_client import models
+from sqlalchemy import create_engine, event
 
+from legger.db import acts
 from legger.retrieval.citations import extract_prose_refs, follow_citations
 from legger.retrieval.search import SearchHit
 
@@ -110,6 +115,15 @@ EXTRACTION_TABLE = [
         "urn:nir:stato:legge:1992;225~art1bis-com1))",
         [("legge-225-1992", "1-bis", "1")],
     ),
+    # ACT-ONLY URN (no ~art) with the article spelled in prose BEFORE the
+    # link: the anchor replaces the link and the prose grammar binds
+    # article -> estremi ("citato" is stripped as an anaphoric qualifier).
+    # Consuming the link would orphan "articolo 96" onto the CITING act.
+    (
+        "articolo 96 del citato [decreto legislativo n. 117 del 2017]"
+        f"({NORMATTIVA}urn:nir:stato:decreto.legislativo:2017;117)",
+        [("dlgs-117-2017", "96", None)],
+    ),
     # codice URN: the registry maps the name, not the carrier estremi
     (
         f"reati politici, ai sensi dell'[art. 8 del Codice penale]({NORMATTIVA}"
@@ -170,6 +184,16 @@ def test_urn_codice_ref_is_registry_verified() -> None:
     assert ref.act_ref == "codice-penale"
     assert ref.number is None
     assert ref.year is None
+
+
+def test_urn_with_article_still_consumes_anchor_wholesale() -> None:
+    """Regression: a ~art URN wins over its anchor — the anchor's own comma
+    ("comma 1") must NOT leak out as a second ref next to the URN's com2."""
+    text = (
+        "ai sensi dell'[articolo 14, comma 1, del decreto legislativo 9 aprile 2008, n. 81]"
+        f"({NORMATTIVA}urn:nir:stato:decreto.legislativo:2008-04-09;81~art14-com2)"
+    )
+    assert triples(text) == [("dlgs-81-2008", "14", "2")]
 
 
 def test_urn_duplicate_of_prose_is_one_ref() -> None:
@@ -332,6 +356,63 @@ def test_own_header_act_name_is_not_followed() -> None:
     ]
     new = follow(hits, client)
     assert {(h.act_ref, h.article) for h in new} == {("codice-penale", "614")}
+
+
+def test_act_only_urn_binds_prose_article_to_linked_act_not_citing_act() -> None:
+    """The E4 review bug: "articolo 96 del citato [d.lgs. n. 117 del 2017](act-only
+    URN)" must fetch art. 96 OF THE LINKED ACT — not the citing act's own art. 96
+    (which exists here as a decoy), and not the linked act's opening articles."""
+    client = FakeQdrant(
+        [
+            payload("dlgs-117-2017", "96"),
+            payload("dlgs-117-2017", "1"),  # would surface on an act-level fetch
+            payload("dlgs-112-2017", "96"),  # same-numbered article in the CITING act
+        ]
+    )
+    hits = [
+        hit(
+            "dlgs-112-2017",
+            "20",
+            "si applica l'articolo 96 del citato [decreto legislativo n. 117 del 2017]"
+            f"({NORMATTIVA}urn:nir:stato:decreto.legislativo:2017;117)",
+        )
+    ]
+    new = follow(hits, client)
+    assert {(h.act_ref, h.article) for h in new} == {("dlgs-117-2017", "96")}
+
+
+def test_acts_probe_is_batched_into_one_query() -> None:
+    """Three estremi targets, ONE Postgres probe (not one per resolve_refs call)."""
+    engine = create_engine("sqlite://")
+    acts.create(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            acts.insert(),
+            [
+                {
+                    "act_ref": "legge-241-1990",
+                    "act_type": "legge",
+                    "collection": "Codici",
+                    "vigenza": "vigente",
+                    "file_path": "Codici/legge-241-1990.md",
+                }
+            ],
+        )
+    queries: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda conn, cur, stmt, *a: queries.append(stmt))
+    client = FakeQdrant([payload("legge-241-1990", "1")])
+    hits = [
+        hit(
+            "codice-civile",
+            "2054",
+            "ai sensi della legge 7 agosto 1990, n. 241, del decreto legislativo "
+            "9 aprile 2008, n. 81 e del decreto legislativo 18 agosto 2000, n. 267",
+        )
+    ]
+    new = follow(hits, client, engine=engine)
+    # only the act present in the table resolves; the other two are probed away
+    assert {h.act_ref for h in new} == {"legge-241-1990"}
+    assert len([q for q in queries if q.lstrip().upper().startswith("SELECT")]) == 1
 
 
 def test_most_cited_first_and_budget_is_a_hard_stop() -> None:

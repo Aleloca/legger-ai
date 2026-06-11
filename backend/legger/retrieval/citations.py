@@ -12,21 +12,40 @@ citations EXACTLY ONE hop:
 
   1. **URN NIR links.** The corpus markdown keeps the Normattiva links
      (``[anchor](...urn:nir:stato:decreto.legislativo:2008-04-09;81~art14)``)
-     and they survive chunking, so they are machine-precise and PREFERRED:
-     when a link's URN parses, the ref comes from the URN and the anchor
-     prose is consumed (never re-parsed — anchor and URN can disagree on
-     details like comma lists, and the URN wins). Links whose URN does not
-     parse (Costituzione URNs carry no numero, unknown codici) fall back to
-     their anchor text; the URL itself never reaches the prose grammar.
+     and they survive chunking, so they are machine-precise and PREFERRED —
+     but only when the URN pins an ARTICLE (``~art``): then the ref comes
+     from the URN and the anchor prose is consumed (never re-parsed —
+     anchor and URN can disagree on details like comma lists, and the URN
+     wins). ACT-ONLY URNs are NOT emitted from the URN: the corpus
+     routinely spells the article in prose BEFORE such a link ("articolo
+     96 del citato [decreto legislativo n. 117 del 2017](...:2017;117)"),
+     so the link is replaced by its anchor text and the prose grammar
+     binds article -> estremi by adjacency — emitting the act-level URN
+     ref here would orphan the prose article onto the CITING act. Links
+     whose URN does not parse at all (Costituzione URNs carry no numero,
+     unknown codici) fall back the same way. Either way the URL itself
+     never reaches the prose grammar; when the anchor of an act-only URN
+     does not parse as estremi (rare), the ref degrades to
+     act-level-or-nothing.
   2. **Prose.** Date estremi ("<tipo> <D month YYYY>, n. <N>" -> slug
      ``<tipo>-<N>-<YYYY>``, the E1-documented miss) are normalized to the
-     "<tipo> <N>/<YYYY>" form and the E1 grammar does the rest (article
-     binding, codici names, adjacency); plus the internal "di cui al comma
-     N" (act_ref=None AND article=None — the citing article's own comma).
+     "<tipo> <N>/<YYYY>" form, anaphoric qualifiers in the article->source
+     gap ("del citato/medesimo/stesso decreto ...") are stripped, and the
+     E1 grammar does the rest (article binding, codici names, adjacency);
+     plus the internal "di cui al comma N" (act_ref=None AND article=None
+     — the citing article's own comma).
 
   Ordering: URN refs first (in textual order), then prose refs (in textual
   order of the link-stripped text); deduplicated on (act_ref, article,
   comma) like :func:`~legger.retrieval.fastpath.extract_refs`.
+
+  Documented misses (the citing chunk still reaches the LLM; only the
+  follow degrades): article RANGES bind the first article only ("dagli
+  articoli 282 a 284 del codice..." -> art. 282; "a"/"al" is not a list
+  separator and range expansion is not attempted); adjacency gaps the E1
+  grammar does not cross, e.g. "articolo N, primo periodo, del [link]"
+  (ordinal "periodo" clauses) and "articolo N del codice di cui al
+  [link]", degrade to an unbound article plus an act-level ref.
 
 - :func:`follow_citations` — hits -> NEW hits only (the caller appends).
   Internal refs (act_ref=None) bind to the citing hit's own act (and, for
@@ -53,6 +72,7 @@ from legger.retrieval.fastpath import (
     _ESTREMI_TIPO,
     _L,
     ExtractedRef,
+    _existing_acts,
     _norm_number,
     extract_refs,
     resolve_refs,
@@ -143,11 +163,28 @@ _DATE_ESTREMI_RE = re.compile(
 
 # Internal rinvio to the citing article's own comma. The negative lookahead
 # keeps "di cui al comma 1 dell'articolo 6" out: that comma belongs to
-# article 6 (which the E1 grammar emits on its own).
+# article 6 (which the E1 grammar emits on its own). Known noise: only the
+# "dell'art..." continuation is blocked, so "di cui al comma 2 della legge
+# n. ..." ALSO fires and emits a spurious internal ref next to the act ref.
+# Harmless in follow_citations BY CONSTRUCTION — the internal ref binds to
+# the citing article, which is always among the hits already and dedups
+# away — but future consumers of extract_prose_refs should expect it.
 _INTERNAL_COMMA_RE = re.compile(
     rf"di\s+cui\s+al\s+comma\s+"
     rf"(?P<comma>\d+(?:[\s.\-]+(?:{SUFFIX_ALT})(?![{_L}]))?)"
     rf"(?!\s*,?\s*dell['’]\s*art)",
+    re.IGNORECASE,
+)
+
+
+# Anaphoric qualifiers between an article and its source ("articolo 96 del
+# citato decreto legislativo n. 117 del 2017", "della medesima legge"): the
+# E1 adjacency gap admits connectives only, so these words would break the
+# article->estremi bind. Stripped before the grammar runs — norm-text style
+# only (chat queries rarely use them), and the words are pure qualifiers,
+# never sources or article numbers themselves.
+_ANAPHORIC_RE = re.compile(
+    rf"(?<![{_L}])(?:citat|medesim|stess|predett|suddett|richiamat|menzionat)[oaie]\s+",
     re.IGNORECASE,
 )
 
@@ -173,13 +210,20 @@ def extract_prose_refs(text: str) -> list[ExtractedRef]:
 
     def _consume_link(m: re.Match[str]) -> str:
         ref = _ref_from_urn(m.group(2))
-        if ref is None:
-            return m.group(1)  # keep the anchor prose, drop only the URL
+        if ref is None or ref.article is None:
+            # No parseable URN, or an ACT-ONLY URN: keep the anchor prose,
+            # drop only the URL. Act-only links often have their article
+            # spelled in prose BEFORE the anchor ("articolo 96 del citato
+            # [decreto legislativo n. 117 del 2017](...)"): the prose
+            # grammar binds it to the anchor's estremi by adjacency, while
+            # consuming the link here would orphan that article onto the
+            # CITING act (and lose the truly cited one).
+            return m.group(1)
         urn_refs.append(ref)
         return " "  # URN wins: the anchor must not be re-parsed
 
     prose = _MD_LINK_RE.sub(_consume_link, text)
-    refs = urn_refs + extract_refs(_normalize_date_estremi(prose))
+    refs = urn_refs + extract_refs(_ANAPHORIC_RE.sub("", _normalize_date_estremi(prose)))
     refs.extend(
         ExtractedRef(comma=_norm_number(m.group("comma")))
         for m in _INTERNAL_COMMA_RE.finditer(prose)
@@ -226,7 +270,9 @@ def follow_citations(
     that act is (this also silences each chunk's own header line, which
     names its act) — then resolved one (act_ref, article) target at a time
     via :func:`~legger.retrieval.fastpath.resolve_refs`, most-cited target
-    first (count of citing hit texts; ties in first-seen order).
+    first. "Most-cited" counts DISTINCT extracted refs, not citing hits: a
+    hit citing art. 14 comma 1 AND art. 14 comma 2 contributes two to the
+    (act, art. 14) target. Ties resolve in first-seen order.
 
     ``token_budget`` caps the APPENDED context (estimate: len(text)//4 per
     chunk) and is a hard stop, not best-fit: the first chunk that does not
@@ -234,8 +280,10 @@ def follow_citations(
     ref squeezed in instead would be worse context than none.
 
     One hop by design: the returned hits' own citations are NOT followed.
-    The ``engine`` probe and the Qdrant error contract are resolve_refs's
-    (Postgres degrades gracefully, Qdrant errors propagate).
+    The ``engine`` acts-table probe (estremi-COMPUTED refs only, same
+    advisory semantics as resolve_refs's own: Postgres errors degrade to
+    probe-less) is batched into ONE query over all targets up front;
+    Qdrant errors propagate (resolve_refs's contract).
     """
     if not hits or token_budget <= 0:
         return []
@@ -253,18 +301,26 @@ def follow_citations(
             counts[target] = counts.get(target, 0) + 1
             by_target.setdefault(target, bound)
     first_seen = {target: i for i, target in enumerate(by_target)}
-    ordered = sorted(by_target, key=lambda t: (-counts[t], first_seen[t]))
+    ordered = [
+        (act_ref, article)
+        for act_ref, article in sorted(by_target, key=lambda t: (-counts[t], first_seen[t]))
+        if (act_ref, article) not in have_articles
+        and not (article is None and act_ref in have_acts)
+    ]
+    # One acts-table probe for ALL estremi-computed targets (resolve_refs
+    # would otherwise re-probe per call below); resolve_refs runs probe-less.
+    known_acts: set[str] | None = None
+    if engine is not None:
+        probe = sorted({t[0] for t in ordered if by_target[t].year is not None})
+        if probe:
+            known_acts = _existing_acts(engine, probe)
     spent = 0
     new_hits: list[SearchHit] = []
-    for act_ref, article in ordered:
-        if (act_ref, article) in have_articles or (article is None and act_ref in have_acts):
+    for target in ordered:
+        ref = by_target[target]
+        if known_acts is not None and ref.year is not None and ref.act_ref not in known_acts:
             continue
-        resolved = resolve_refs(
-            [by_target[(act_ref, article)]],
-            qdrant_client=qdrant_client,
-            collection=collection,
-            engine=engine,
-        )
+        resolved = resolve_refs([ref], qdrant_client=qdrant_client, collection=collection)
         for new_hit in resolved:
             if new_hit.chunk_id in seen_chunks:
                 continue
