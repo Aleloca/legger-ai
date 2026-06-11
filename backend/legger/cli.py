@@ -230,13 +230,18 @@ def _run_eval(args: argparse.Namespace) -> None:
 def _run_chat(args: argparse.Namespace) -> None:
     """REPL: prompt `> `, stream the grounded answer, list the sources consulted.
 
-    Exits on EOF (Ctrl-D), Ctrl-C, or `/quit`.
+    Retrieval goes through the unified pipeline (Task E5): query
+    understanding, explicit-reference fast path, hybrid search (+ optional
+    rerank), 1-hop citation following. Exits on EOF (Ctrl-D), Ctrl-C, or
+    `/quit`.
     """
     from anthropic import Anthropic
     from qdrant_client import QdrantClient
+    from sqlalchemy import create_engine
 
-    from legger.chat.generate import MODEL_SONNET, retrieve_for_messages, stream_answer
+    from legger.chat.generate import MODEL_SONNET, stream_answer
     from legger.retrieval.embedders import get_embedder
+    from legger.retrieval.pipeline import retrieve
     from legger.retrieval.search import SEARCH_CLIENT_TIMEOUT_S
     from legger.settings import Settings
 
@@ -247,6 +252,10 @@ def _run_chat(args: argparse.Namespace) -> None:
 
     anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
     qdrant = QdrantClient(url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S)
+    # The engine backs the fast path's advisory acts-table probe only:
+    # creation is lazy and probe failures degrade inside the pipeline, so a
+    # stopped Postgres never blocks the chat.
+    engine = create_engine(settings.database_url)
     embedder = get_embedder(args.embedder)
     messages: list[dict] = []
 
@@ -266,23 +275,27 @@ def _run_chat(args: argparse.Namespace) -> None:
             return
 
         messages.append({"role": "user", "content": user_input})
-        hits = retrieve_for_messages(
+        result = retrieve(
             messages,
+            qdrant_client=qdrant,
+            engine=engine,
+            anthropic_client=anthropic_client,
             collection=args.collection,
             embedder=embedder,
-            client=qdrant,
             k=args.k,
         )
         answer_parts: list[str] = []
-        for delta in stream_answer(messages, hits, anthropic_client=anthropic_client):
+        for delta in stream_answer(messages, result.hits, anthropic_client=anthropic_client):
             print(delta, end="", flush=True)
             answer_parts.append(delta)
         messages.append({"role": "assistant", "content": "".join(answer_parts)})
 
         print("\n\nFonti consultate:")
-        for hit in hits:
-            first_header_line = hit.header.splitlines()[0] if hit.header else ""
-            print(f"  - {hit.act_ref} art. {hit.article} — {first_header_line}")
+        for source in result.sources:
+            vigenza = "" if source.vigenza == "vigente" else f" [{source.vigenza}]"
+            print(f"  - {source.act_ref} art. {source.article} — {source.title}{vigenza}")
+        if result.used_fastpath:
+            print("  (riferimento esplicito risolto via fast path)")
         print()
 
 
