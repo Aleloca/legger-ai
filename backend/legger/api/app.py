@@ -54,9 +54,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Next.js dev server origin (G1). Production origins are an H1/H2 concern.
-CORS_ORIGINS = ["http://localhost:3000"]
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the legger API app around *settings* (default: env-resolved)."""
@@ -100,10 +97,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="legger.ai API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
+        # Settings-driven (CORS_ORIGINS, comma-separated): defaults to the
+        # Next.js dev server; production sets the real site origin (H1).
+        allow_origins=settings.cors_origin_list(),
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/healthz")
+    def healthz() -> dict[str, str]:
+        """Liveness probe: no dependencies, no I/O (Docker/proxy healthchecks)."""
+        return {"status": "ok"}
+
     app.include_router(acts_router)
     app.include_router(chat_router)
     app.include_router(search_router)

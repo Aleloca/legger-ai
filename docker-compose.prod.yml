@@ -1,0 +1,183 @@
+# legger.ai production stack (Task H1).
+#
+# Topology: caddy (the only published ports) -> frontend (Next standalone)
+#                                            -> api (/api/backend/* stripped)
+#           api -> postgres + qdrant; corpus mounted read-only at /corpus.
+#
+# Required environment (compose reads ./.env automatically):
+#   DOMAIN              site address WITH scheme — https://legger.ai in prod,
+#                       http://localhost for local smoke (defaults to the
+#                       latter so `docker compose config` works out of the box)
+#   ANTHROPIC_API_KEY   required (no default)
+#   VOYAGE_API_KEY      required (no default)
+#   POSTGRES_PASSWORD   set a real one in prod (defaults to "legger")
+# Optional: QDRANT_COLLECTION, EMBEDDER_NAME (must match the indexed
+# collection), CORS_ORIGINS (defaults to DOMAIN), RERANK_ENABLED,
+# TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID (ingestion alerts),
+# CADDY_HTTP_PORT/CADDY_HTTPS_PORT (remap for smoke tests next to a dev
+# stack already holding 80/443 or 5432/6333 — postgres/qdrant are never
+# published here).
+#
+# CORPUS VOLUME (ops-managed): `corpus` is a named volume holding the
+# italia-corpus git clone. It MUST live on a case-sensitive filesystem
+# (named volumes on a Linux host are ext4/overlay: fine — see
+# docs/corpus-analysis.md appendix). Seed it once before first deploy:
+#
+#   docker compose -f docker-compose.prod.yml run --rm --volume \
+#     legger-ai_corpus:/corpus -u root api \
+#     sh -c 'git clone <CORPUS_REMOTE> /tmp/c && cp -a /tmp/c/. /corpus/ && chown -R legger /corpus'
+#
+# (or any equivalent clone into the volume; files must be writable by uid
+# 1000 "legger" so `ingest` can git-pull). Updates then flow through the
+# `ingest` one-shot below.
+#
+# DEPLOY SEQUENCE:
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml run --rm migrate   # alembic upgrade head
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# INGESTION (delta): one-shot container, scheduled with cron ON THE HOST
+# (the stack has no scheduler). Example crontab:
+#   17 5 * * * cd /opt/legger-ai && /usr/bin/docker compose -f docker-compose.prod.yml run --rm ingest >> /var/log/legger-ingest.log 2>&1
+#
+# LOCAL SMOKE TEST (next to a running dev stack — nothing clashes because
+# postgres/qdrant are unpublished and Caddy's ports are remapped; the
+# http:// DOMAIN turns TLS off):
+#   export DOMAIN=http://localhost CADDY_HTTP_PORT=8080 CADDY_HTTPS_PORT=8443
+#   docker compose -p legger-smoke -f docker-compose.prod.yml up -d postgres qdrant
+#   docker run --rm -v legger-smoke_corpus:/corpus \
+#     -v "$PWD/backend/tests/fixtures/corpus:/src:ro" alpine \
+#     sh -c 'cp -a /src/. /corpus/ && chown -R 1000 /corpus'   # tiny throwaway corpus
+#   docker compose -p legger-smoke -f docker-compose.prod.yml run --rm migrate
+#   docker compose -p legger-smoke -f docker-compose.prod.yml up -d
+#   curl http://localhost:8080/api/backend/healthz   # {"status":"ok"} via Caddy
+#   curl -I http://localhost:8080/                   # frontend via Caddy
+#   docker compose -p legger-smoke -f docker-compose.prod.yml down -v
+
+x-api-environment: &api-environment
+  DATABASE_URL: postgresql+psycopg://legger:${POSTGRES_PASSWORD:-legger}@postgres:5432/legger
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_COLLECTION: ${QDRANT_COLLECTION:-norme}
+  EMBEDDER_NAME: ${EMBEDDER_NAME:-voyage-4-large}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+  VOYAGE_API_KEY: ${VOYAGE_API_KEY:?VOYAGE_API_KEY is required}
+  CORS_ORIGINS: ${CORS_ORIGINS:-${DOMAIN:-http://localhost}}
+  CORPUS_PATH: /corpus
+  RERANK_ENABLED: ${RERANK_ENABLED:-false}
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+      - "${CADDY_HTTPS_PORT:-443}:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:-http://localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # TLS certificates/keys — must persist across restarts
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
+  frontend:
+    build: ./frontend
+    image: legger-frontend
+    restart: unless-stopped
+    environment:
+      # The rewrite target is baked at image build time (see
+      # frontend/Dockerfile); this runtime copy documents intent and covers
+      # any server code reading process.env.BACKEND_URL directly.
+      BACKEND_URL: http://api:8000
+    depends_on:
+      - api
+
+  api:
+    build: ./backend
+    image: legger-api
+    restart: unless-stopped
+    environment: *api-environment
+    volumes:
+      - corpus:/corpus:ro # read-only: only `ingest` writes (git pull)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  # One-shot: alembic migrations. Run at every deploy, BEFORE `up`:
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  # (`run` enables the service despite the "ops" profile, which keeps it
+  # out of plain `up`.)
+  migrate:
+    build: ./backend
+    image: legger-api
+    profiles: ["ops"]
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: delta ingestion (git pull in /corpus + reindex). Scheduled by
+  # host cron — see header. Needs the corpus volume read-write.
+  ingest:
+    build: ./backend
+    image: legger-api
+    profiles: ["ops"]
+    command: ["legger", "ingest", "delta"]
+    environment:
+      <<: *api-environment
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Trust /corpus regardless of who chowned the volume (git's
+      # safe.directory check would otherwise refuse the pull).
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /corpus
+    volumes:
+      - corpus:/corpus
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The image ships no curl/wget; bash /dev/tcp probes the HTTP port.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: legger
+      POSTGRES_USER: legger
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legger}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legger -d legger"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  caddy_data:
+  caddy_config:
+  corpus: # ops-managed italia-corpus clone — see header comment
+  qdrant_data:
+  pg_data:

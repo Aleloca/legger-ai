@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     #: see backend/eval/results) — flip via RERANK_ENABLED if the trade-off
     #: changes. E5 consumes this.
     rerank_enabled: bool = False
+    #: Allowed CORS origins for the API, comma-separated (Task H1). The
+    #: default covers the Next.js dev server; production sets the real site
+    #: origin via CORS_ORIGINS (e.g. "https://legger.ai"). Kept as a plain
+    #: comma-separated string (not list[str]) because pydantic-settings
+    #: would parse a list field as JSON from the env var.
+    cors_origins: str = "http://localhost:3000"
+
+    def cors_origin_list(self) -> list[str]:
+        """The ``cors_origins`` string split into clean origin entries."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @field_validator("corpus_path", mode="after")
     @classmethod

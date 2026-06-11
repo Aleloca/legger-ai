@@ -1,0 +1,11 @@
+# Keep the build context to what the Dockerfile actually COPYs.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+eval/
+scripts/
+Dockerfile
+.dockerignore

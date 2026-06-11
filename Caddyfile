@@ -1,0 +1,36 @@
+# legger.ai edge proxy (Task H1).
+#
+# DOMAIN comes from the environment (docker-compose.prod.yml passes it
+# through). Use a full site address INCLUDING the scheme:
+#
+#   production   DOMAIN=https://legger.ai      -> automatic TLS (Let's Encrypt)
+#   smoke/local  DOMAIN=http://localhost       -> plain HTTP on :80, no TLS
+#
+# SSE NOTE (backend/legger/api/chat.py "DEPLOYMENT NOTE"): /chat streams
+# text/event-stream with NO heartbeats — silent windows of tens of seconds
+# while retrieval + the model's first token are in flight. Caddy's defaults
+# are already safe for this:
+#   - reverse_proxy auto-disables buffering for Content-Type:
+#     text/event-stream; flush_interval -1 below makes that explicit
+#     (low-latency mode, flush after every write).
+#   - there is no response read/write timeout by default (the global
+#     `timeouts` are unset => no limit; the 5m idle timeout only applies
+#     between keep-alive requests, not mid-response). Do NOT add a `write`
+#     timeout here without revisiting the chat stream.
+
+{$DOMAIN} {
+	# Backend API: /api/backend/* -> uvicorn, prefix stripped (handle_path),
+	# mirroring the Next.js dev rewrite so the frontend uses one URL shape
+	# everywhere. Handled before the frontend catch-all (longer path wins).
+	handle_path /api/backend/* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	# Everything else: the Next.js standalone server.
+	handle {
+		encode zstd gzip
+		reverse_proxy frontend:3000
+	}
+}

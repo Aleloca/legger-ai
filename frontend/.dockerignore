@@ -1,0 +1,7 @@
+# Keep the build context lean; node_modules comes from the deps stage.
+node_modules/
+.next/
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
