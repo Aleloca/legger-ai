@@ -1,0 +1,153 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * legger.ai — design system "editoriale italiano raffinato"
+ * ---------------------------------------------------------
+ * La norma deve sembrare carta ben composta (eredità Gazzetta
+ * Ufficiale); il chrome dell'interfaccia resta silenzioso e preciso.
+ *
+ * - Carta calda, mai bianco puro:    --background  #faf8f4
+ * - Inchiostro, mai nero puro:       --foreground  #1a1816
+ * - Un solo accento istituzionale:   --primary     #7d2332 (bordeaux)
+ *   per citazioni, link e stati attivi.
+ * - Bordi sottilissimi:              --border      #e5e0d8
+ * - Vigenza: verde salvia (vigente), grigio caldo (abrogato),
+ *   ambra (non verificato).
+ *
+ * Tipografia:
+ * - --font-display  Fraunces      (titoli, intestazioni pannelli)
+ * - --font-sans     IBM Plex Sans (chrome UI, chat)
+ * - --font-serif    Literata      (testo della norma, lettura lunga)
+ *
+ * Dark mode: NON supportata per ora — la luce è il prodotto.
+ * La variante `dark` resta class-based (mai attivata) così le
+ * preferenze di sistema dell'utente non alterano la resa.
+ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-vigente: var(--vigente);
+  --color-vigente-muted: var(--vigente-muted);
+  --color-abrogato: var(--abrogato);
+  --color-abrogato-muted: var(--abrogato-muted);
+  --color-non-verificato: var(--non-verificato);
+  --color-non-verificato-muted: var(--non-verificato-muted);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* carta e inchiostro */
+  --background: #faf8f4;
+  --foreground: #1a1816;
+  --card: #fffdf9;
+  --card-foreground: #1a1816;
+  --popover: #fffdf9;
+  --popover-foreground: #1a1816;
+
+  /* bordeaux istituzionale: citazioni, link, stati attivi */
+  --primary: #7d2332;
+  --primary-foreground: #faf8f4;
+
+  /* superfici silenziose */
+  --secondary: #f2eee6;
+  --secondary-foreground: #1a1816;
+  --muted: #f2eee6;
+  --muted-foreground: #6f675e;
+  --accent: #f5ecea;
+  --accent-foreground: #7d2332;
+
+  --destructive: #9e2b25;
+
+  /* bordi a capello */
+  --border: #e5e0d8;
+  --input: #e5e0d8;
+  --ring: #7d2332;
+
+  /* vigenza */
+  --vigente: #4f7459; /* verde salvia */
+  --vigente-muted: #e9efe7;
+  --abrogato: #847b70; /* grigio caldo */
+  --abrogato-muted: #edeae3;
+  --non-verificato: #9a6b1f; /* ambra */
+  --non-verificato-muted: #f6ecd9;
+
+  /* geometria contenuta: niente arrotondamenti vistosi */
+  --radius: 0.375rem;
+
+  --chart-1: #7d2332;
+  --chart-2: #4f7459;
+  --chart-3: #9a6b1f;
+  --chart-4: #847b70;
+  --chart-5: #1a1816;
+  --sidebar: #f5f2ec;
+  --sidebar-foreground: #1a1816;
+  --sidebar-primary: #7d2332;
+  --sidebar-primary-foreground: #faf8f4;
+  --sidebar-accent: #ece7dd;
+  --sidebar-accent-foreground: #1a1816;
+  --sidebar-border: #e5e0d8;
+  --sidebar-ring: #7d2332;
+}
+
+/*
+ * Dark mode volutamente assente: il prodotto è pensato come carta
+ * stampata. Quando (se) servirà, definire qui un blocco `.dark { … }`
+ * con gli stessi token.
+ */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
