@@ -109,6 +109,13 @@ def main() -> None:
         help="Staleness threshold in days (default 7, per design §8 risk #1)",
     )
 
+    feedback = subparsers.add_parser("feedback", help="Message feedback (👍/👎) utilities")
+    feedback_sub = feedback.add_subparsers(dest="feedback_command")
+    feedback_sub.add_parser(
+        "report",
+        help="Totals, 👍-rate per config combination, and the latest negative feedbacks",
+    )
+
     chat = subparsers.add_parser("chat", help="Interactive grounded chat over the indexed corpus")
     chat.add_argument(
         "--collection",
@@ -139,6 +146,13 @@ def main() -> None:
     if args.command == "chat":
         _run_chat(args)
         return
+
+    if args.command == "feedback":
+        if getattr(args, "feedback_command", None) == "report":
+            _run_feedback_report()
+            return
+        feedback.print_help()
+        raise SystemExit(1)
 
     if args.command == "ingest":
         if getattr(args, "ingest_command", None) == "bootstrap":
@@ -333,6 +347,18 @@ def _run_ingest_check_upstream(args: argparse.Namespace) -> None:
         )
         raise SystemExit(1)
     print(f"Upstream OK: ultimo commit entro {args.max_days} giorni in {settings.corpus_path}.")
+
+
+def _run_feedback_report() -> None:
+    """Print the 👍/👎 report (see legger.feedback_report) from the local DB."""
+    from legger.db import get_engine
+    from legger.feedback_report import build_report
+
+    engine = get_engine()
+    try:
+        print(build_report(engine))
+    finally:
+        engine.dispose()
 
 
 def _run_eval(args: argparse.Namespace) -> None:

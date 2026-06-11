@@ -97,10 +97,12 @@ export function Chat({
               ...m,
               citations: [...(m.citations ?? []), citation],
             })),
-          onDone: ({ truncated }) => {
+          onDone: ({ truncated, config: effective }) => {
             setSearching(false);
             setStreaming(false);
-            patchLast((m) => ({ ...m, final: true, truncated }));
+            // La config effettiva resta sul messaggio: il feedback 👍/👎
+            // la invia per correlare giudizio e modello/effort.
+            patchLast((m) => ({ ...m, final: true, truncated, config: effective }));
           },
           onError: (message) => {
             setSearching(false);

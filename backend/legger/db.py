@@ -4,6 +4,10 @@ The ``acts`` table is the Postgres mirror of what Qdrant knows per act: the
 payload fields shared with chunks (act_ref, act_type, title, collection,
 vigenza, file_path) plus the ActRef extras (number, year, date_pub, source).
 ``ingestion_runs`` / ``ingestion_progress`` track bootstrap and delta runs (D2/D3).
+``message_feedback`` stores the 👍/👎 votes on assistant answers (POST
+/feedback) together with the question/answer pair, the citation list and the
+EFFECTIVE per-turn config (from the ``done`` SSE event) so feedback can be
+correlated with the model/effort combination that produced the answer.
 
 Plain Core, no ORM: D2/D3 issue bulk upserts and the API (F1) does simple
 selects, so sessions would be dead weight.
@@ -21,6 +25,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    SmallInteger,
     Table,
     Text,
     create_engine,
@@ -80,6 +85,24 @@ ingestion_progress = Table(
     Column("commit_sha", Text, nullable=False),
     Column("act_ref", Text),
     Column("indexed_at", TIMESTAMP(timezone=True), nullable=False),
+)
+
+message_feedback = Table(
+    "message_feedback",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("created_at", TIMESTAMP(timezone=True), nullable=False, server_default=func.now()),
+    Column("rating", SmallInteger, nullable=False),  # +1 (👍) / -1 (👎)
+    Column("reason", Text),  # motivo opzionale del 👎 (max ~2000 chars, API-enforced)
+    Column("question", Text, nullable=False),  # il turno utente che ha prodotto la risposta
+    Column("answer", Text, nullable=False),  # trascrizione grezza della risposta
+    # La lista citazioni del messaggio (marker/act_ref/article/comma/verified).
+    Column("citations", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    # La config EFFETTIVA del turno (evento `done`): answer/qu model + effort.
+    Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    CheckConstraint("rating IN (-1, 1)", name="ck_message_feedback_rating"),
+    Index("ix_message_feedback_rating", "rating"),
+    Index("ix_message_feedback_created_at", "created_at"),
 )
 
 
@@ -174,6 +197,34 @@ def set_vigenza(
         with bind.begin() as conn:
             return conn.execute(stmt).rowcount
     return bind.execute(stmt).rowcount
+
+
+def insert_feedback(
+    bind: Engine | Connection,
+    *,
+    rating: int,
+    question: str,
+    answer: str,
+    reason: str | None = None,
+    citations: list | None = None,
+    config: dict | None = None,
+) -> None:
+    """INSERT one ``message_feedback`` row (POST /feedback).
+
+    ``created_at`` is the server-side ``now()`` default; ``citations`` /
+    ``config`` fall back to their JSONB defaults (``[]`` / ``{}``) when
+    omitted. Validation (rating in {-1, 1}, size caps, config allowlist)
+    happens at the API layer — here only the CHECK constraint guards.
+    """
+    values: dict[str, object] = {
+        "rating": rating,
+        "reason": reason,
+        "question": question,
+        "answer": answer,
+        "citations": citations if citations is not None else [],
+        "config": config if config is not None else {},
+    }
+    _execute(bind, message_feedback.insert().values(**values))
 
 
 def upsert_progress(

@@ -104,6 +104,12 @@ export interface ChatMessage {
   /** Solo assistant: true se `done` ha riportato truncated. */
   truncated?: boolean;
   /**
+   * Solo assistant: la config EFFETTIVA del turno (blocco `config`
+   * dell'evento `done`) — accompagna il feedback 👍/👎 per correlare
+   * il giudizio alla combinazione modello/effort che ha risposto.
+   */
+  config?: EffectiveConfig;
+  /**
    * Solo assistant: true quando lo stream è concluso (done o error).
    * Il renderer mostra come testo un eventuale marker pendente in coda.
    */

@@ -43,6 +43,7 @@ from qdrant_client import QdrantClient
 
 from legger.api.acts import router as acts_router
 from legger.api.chat import router as chat_router
+from legger.api.feedback import router as feedback_router
 from legger.api.search import router as search_router
 from legger.db import get_engine
 from legger.retrieval.embedders import get_embedder
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(acts_router)
     app.include_router(chat_router)
+    app.include_router(feedback_router)
     app.include_router(search_router)
     return app
 

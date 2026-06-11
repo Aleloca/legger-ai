@@ -11,6 +11,8 @@ from legger.db import (
     get_engine,
     ingestion_progress,
     ingestion_runs,
+    insert_feedback,
+    message_feedback,
     metadata,
     set_vigenza,
     upsert_act,
@@ -24,7 +26,12 @@ from legger.settings import Settings
 
 
 def test_metadata_has_all_tables() -> None:
-    assert set(metadata.tables) == {"acts", "ingestion_runs", "ingestion_progress"}
+    assert set(metadata.tables) == {
+        "acts",
+        "ingestion_runs",
+        "ingestion_progress",
+        "message_feedback",
+    }
 
 
 def test_acts_schema() -> None:
@@ -53,6 +60,22 @@ def test_ingestion_progress_schema() -> None:
     assert not ingestion_progress.c.commit_sha.nullable
     assert not ingestion_progress.c.indexed_at.nullable
     assert ingestion_progress.c.act_ref.nullable
+
+
+def test_message_feedback_schema() -> None:
+    assert [c.name for c in message_feedback.primary_key.columns] == ["id"]
+    assert message_feedback.c.id.autoincrement is True
+    for name in ("created_at", "rating", "question", "answer", "citations", "config"):
+        assert not message_feedback.c[name].nullable, name
+    assert message_feedback.c.reason.nullable
+    for name in ("created_at", "citations", "config"):
+        assert message_feedback.c[name].server_default is not None, name
+    checks = {c.name for c in message_feedback.constraints if isinstance(c, CheckConstraint)}
+    assert "ck_message_feedback_rating" in checks
+    assert {i.name for i in message_feedback.indexes} == {
+        "ix_message_feedback_rating",
+        "ix_message_feedback_created_at",
+    }
 
 
 def test_get_engine_uses_settings_url() -> None:
@@ -185,6 +208,86 @@ def test_upsert_progress_insert_then_update(engine: Engine) -> None:
     assert rows[0].commit_sha == "bbb222"
     assert rows[0].act_ref == _ACT_REF
     assert rows[0].indexed_at >= first_indexed_at
+
+
+_FEEDBACK_QUESTION = "test:db:domanda di prova?"
+
+
+@pytest.fixture
+def feedback_engine() -> Iterator[Engine]:
+    eng = get_engine()
+    yield eng
+    with eng.begin() as conn:
+        conn.execute(
+            message_feedback.delete().where(message_feedback.c.question == _FEEDBACK_QUESTION)
+        )
+    eng.dispose()
+
+
+@pytest.mark.db
+def test_insert_feedback_defaults_and_roundtrip(feedback_engine: Engine) -> None:
+    insert_feedback(
+        feedback_engine,
+        rating=1,
+        question=_FEEDBACK_QUESTION,
+        answer="Risposta di prova.",
+    )
+    with feedback_engine.connect() as conn:
+        row = conn.execute(
+            select(message_feedback).where(message_feedback.c.question == _FEEDBACK_QUESTION)
+        ).one()
+    assert row.rating == 1
+    assert row.reason is None
+    assert row.citations == []
+    assert row.config == {}
+    assert row.created_at is not None  # server-side now() default
+
+
+@pytest.mark.db
+def test_insert_feedback_full_row(feedback_engine: Engine) -> None:
+    citations = [
+        {
+            "marker": "[[codice-civile|art.2051]]",
+            "act_ref": "codice-civile",
+            "article": "2051",
+            "comma": None,
+            "verified": True,
+        }
+    ]
+    config = {
+        "answer_model": "claude-sonnet-4-6",
+        "answer_effort": "high",
+        "qu_model": "claude-haiku-4-5",
+        "qu_effort": None,
+    }
+    insert_feedback(
+        feedback_engine,
+        rating=-1,
+        question=_FEEDBACK_QUESTION,
+        answer="Risposta sbagliata.",
+        reason="Cita l'articolo sbagliato.",
+        citations=citations,
+        config=config,
+    )
+    with feedback_engine.connect() as conn:
+        row = conn.execute(
+            select(message_feedback).where(message_feedback.c.question == _FEEDBACK_QUESTION)
+        ).one()
+    assert row.rating == -1
+    assert row.reason == "Cita l'articolo sbagliato."
+    assert row.citations == citations
+    assert row.config == config
+
+
+@pytest.mark.db
+def test_feedback_rating_check_constraint(feedback_engine: Engine) -> None:
+    with pytest.raises(IntegrityError, match="ck_message_feedback_rating"):
+        insert_feedback(
+            feedback_engine,
+            rating=0,
+            question=_FEEDBACK_QUESTION,
+            answer="x",
+        )
 
 
 @pytest.mark.db

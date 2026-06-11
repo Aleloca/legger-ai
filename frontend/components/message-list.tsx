@@ -9,6 +9,7 @@
 
 import * as React from "react";
 
+import { FeedbackButtons } from "@/components/feedback-buttons";
 import { SourcesList } from "@/components/sources-list";
 import { renderAssistantText, type CitationRef } from "@/lib/render";
 import type { ChatMessage } from "@/lib/types";
@@ -60,6 +61,9 @@ export function MessageList({
               <MessageRow
                 key={i}
                 message={message}
+                // Il turno utente che ha prodotto questa risposta (per il
+                // payload del feedback 👍/👎).
+                question={questionFor(messages, i)}
                 searching={searching && i === messages.length - 1}
                 onCitationClick={onCitationClick}
               />
@@ -76,12 +80,23 @@ export function MessageList({
  * token e l'altro (chat.tsx riscrive solo l'ultimo), quindi durante lo
  * streaming si ri-renderizza soltanto il messaggio in corso.
  */
+/** Il contenuto del turno utente più vicino sopra il messaggio i-esimo. */
+function questionFor(messages: ChatMessage[], i: number): string | null {
+  if (messages[i].role !== "assistant") return null;
+  for (let j = i - 1; j >= 0; j--) {
+    if (messages[j].role === "user") return messages[j].content;
+  }
+  return null;
+}
+
 const MessageRow = React.memo(function MessageRow({
   message,
+  question,
   searching,
   onCitationClick,
 }: {
   message: ChatMessage;
+  question: string | null;
   searching: boolean;
   onCitationClick?: (ref: CitationRef) => void;
 }) {
@@ -97,6 +112,7 @@ const MessageRow = React.memo(function MessageRow({
   return (
     <AssistantMessage
       message={message}
+      question={question}
       searching={searching}
       onCitationClick={onCitationClick}
     />
@@ -105,10 +121,12 @@ const MessageRow = React.memo(function MessageRow({
 
 function AssistantMessage({
   message,
+  question,
   searching,
   onCitationClick,
 }: {
   message: ChatMessage;
+  question: string | null;
   searching: boolean;
   onCitationClick?: (ref: CitationRef) => void;
 }) {
@@ -152,6 +170,20 @@ function AssistantMessage({
 
       {message.sources && message.sources.length > 0 ? (
         <SourcesList sources={message.sources} onSourceClick={onCitationClick} />
+      ) : null}
+
+      {/* Feedback solo a risposta COMPLETATA con successo (mai in
+          streaming, mai sui turni in errore). */}
+      {message.final &&
+      !message.error &&
+      message.content.length > 0 &&
+      question ? (
+        <FeedbackButtons
+          question={question}
+          answer={message.content}
+          citations={message.citations}
+          config={message.config}
+        />
       ) : null}
     </div>
   );
