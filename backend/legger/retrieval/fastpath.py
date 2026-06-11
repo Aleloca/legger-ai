@@ -47,9 +47,10 @@ contract):
   "codice dei contratti pubblici" -> ``dlgs-36-2023``), per the refs.py
   doctrine that the bare name means "the codice vigente".
 - Out of scope (documented misses, hybrid fallback covers them): prose
-  estremi with dates ("decreto legislativo 9 aprile 2008, n. 81" — Task E4),
-  leggi costituzionali, two-digit years ("81/08"), dotless code
-  abbreviations ("cc", "cpp" — too ambiguous in chat text).
+  estremi with dates ("decreto legislativo 9 aprile 2008, n. 81" — handled
+  by :mod:`legger.retrieval.citations`, Task E4), leggi costituzionali,
+  two-digit years ("81/08"), dotless code abbreviations ("cc", "cpp" — too
+  ambiguous in chat text).
 """
 
 from __future__ import annotations
@@ -220,16 +221,14 @@ _ESTREMI_TYPES: dict[str, tuple[str, str]] = {
     "legge": ("legge", "legge"),
 }
 
-# The tipo token must be IMMEDIATELY followed by numero+anno ("81/2008",
-# "n. 81 del 2008"): "il decreto legislativo è una fonte..." never fires.
+# Tipo alternation, shared with legger.retrieval.citations (E4), which
+# recognizes the same tipi in their prose-date form ("decreto legislativo
+# 9 aprile 2008, n. 81"). The group names key into _ESTREMI_TYPES.
 # `d.l.` carries a (?!gs) guard so it can never eat the head of "d.lgs.";
 # `l.` carries lookbehinds rejecting a letter-dot prefix, so the tail of a
 # longer abbreviation never reads as legge ("s.r.l. 104/2020" is a company,
-# mirror of _NO_ABBREV_CONTINUATION); the year is 4-digit by design
-# (precision: "90/2000" decades, "81/08").
-_ESTREMI_RE = re.compile(
-    rf"(?<![{_L}])"
-    rf"(?:"
+# mirror of _NO_ABBREV_CONTINUATION).
+_ESTREMI_TIPO = (
     rf"(?P<dlgs>d\.?\s*lgs\.?(?![{_L}])|decreto\s+legislativo(?![{_L}]))"
     rf"|(?P<dpcm>d\.\s*p\.\s*c\.\s*m\.?(?![{_L}])|dpcm(?![{_L}]))"
     rf"|(?P<dpr>d\.\s*p\.\s*r\.?(?![{_L}])|dpr(?![{_L}])"
@@ -237,7 +236,14 @@ _ESTREMI_RE = re.compile(
     rf"|(?P<dl>d\.\s*l\.(?!\s*gs)|dl\.?(?![{_L}])|decreto[\s\-]+legge(?![{_L}]))"
     rf"|(?P<rd>r\.\s*d\.?(?![{_L}])|rd(?![{_L}])|regio\s+decreto(?![{_L}]))"
     rf"|(?P<legge>legge(?![{_L}])|(?<![{_L}]\.)(?<![{_L}]\.\s)l\.)"
-    rf")"
+)
+
+# The tipo token must be IMMEDIATELY followed by numero+anno ("81/2008",
+# "n. 81 del 2008"): "il decreto legislativo è una fonte..." never fires.
+# The year is 4-digit by design (precision: "90/2000" decades, "81/08").
+_ESTREMI_RE = re.compile(
+    rf"(?<![{_L}])"
+    rf"(?:{_ESTREMI_TIPO})"
     rf"\s*,?\s*(?:n\.?|n°|num\.?|numero)?\s*"
     rf"(?P<num>\d{{1,4}}(?:[\s\-](?:{SUFFIX_ALT})(?![{_L}]))?)"
     rf"\s*(?:/\s*|\bdel\s+)"
