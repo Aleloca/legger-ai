@@ -58,8 +58,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            app.state.qdrant.close()
-            app.state.engine.dispose()
+            # Nested so the engine is disposed even if the qdrant close raises.
+            try:
+                app.state.qdrant.close()
+            finally:
+                app.state.engine.dispose()
 
     app = FastAPI(title="legger.ai API", lifespan=lifespan)
     app.add_middleware(

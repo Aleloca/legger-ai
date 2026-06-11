@@ -9,6 +9,7 @@ the ?article window, the 404/503 split, CORS).
 """
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from legger.api import acts as acts_api
-from legger.api.acts import article_anchor
+from legger.api.acts import anchor_from_chunk_segment, article_anchor
 from legger.api.app import create_app
 from legger.settings import Settings
 
@@ -37,7 +38,7 @@ ACT_ROW: dict[str, Any] = {
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """App on the fixture corpus, with the DB lookup stubbed in-memory."""
 
     def fake_lookup(engine: Any, act_ref: str) -> dict | None:
@@ -99,6 +100,16 @@ def test_article_anchor_function() -> None:
     assert article_anchor("1", occurrence=2) == "art-1-2"
 
 
+def test_anchor_from_chunk_segment() -> None:
+    """The chunk-id article segment maps onto an anchor mechanically (for F3)."""
+    assert anchor_from_chunk_segment("art-18") == "art-18"
+    assert anchor_from_chunk_segment("art-613-bis") == "art-613-bis"
+    assert anchor_from_chunk_segment("art-1.2") == "art-1-2"
+    assert anchor_from_chunk_segment("art-UNICO") == "art-unico"
+    # Both sides of the mapping agree on the same article occurrence.
+    assert anchor_from_chunk_segment("art-1.2") == article_anchor("1", occurrence=2)
+
+
 # --- ?article window ----------------------------------------------------------
 
 
@@ -137,7 +148,24 @@ def test_row_exists_but_file_missing_503(
     monkeypatch.setattr(acts_api, "lookup_act", lambda engine, act_ref: dict(row))
     response = client.get("/acts/dlgs-1-2018")
     assert response.status_code == 503
-    assert "sparito-durante-un-update.md" in response.json()["detail"]
+    detail = response.json()["detail"]
+    # Generic message: the on-disk path is logged server-side, never leaked.
+    assert "sparito-durante-un-update.md" not in detail
+    assert "non è al momento" in detail
+
+
+def test_file_vanishes_between_stat_and_parse_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TOCTOU: stat succeeds, then the parse hits a vanished file -> still 503."""
+
+    def vanished(file_path: str, mtime_ns: int) -> Any:
+        raise FileNotFoundError(file_path)
+
+    monkeypatch.setattr(acts_api, "_parse_cached", vanished)
+    response = client.get("/acts/dlgs-1-2018")
+    assert response.status_code == 503
+    assert FIXTURE_FILE not in response.json()["detail"]
 
 
 # --- app wiring ---------------------------------------------------------------
