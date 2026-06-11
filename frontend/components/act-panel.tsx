@@ -157,18 +157,56 @@ export function ActPanel({
 
   // Scroll all'articolo citato + impulso. Dipende dall'IDENTITÀ di
   // `target` (page.tsx crea un oggetto nuovo ad ogni click), così anche
-  // il click ripetuto sulla stessa citazione riparte scroll e impulso.
+  // il click ripetuto sulla stessa citazione (e ogni re-target nello
+  // stesso atto già aperto) riparte scroll e impulso.
+  //
+  // Lo scroll viene RIBADITO per qualche frame: con `content-visibility:
+  // auto` il primo scrollIntoView naviga su altezze STIMATE degli
+  // articoli non ancora renderizzati — su atti lunghi (Codice civile)
+  // WebKit/Firefox atterrano lontani dal bersaglio, percepito come
+  // "non scrolla". Dopo il primo salto il motore impagina la zona di
+  // atterraggio e le stime diventano misure: si ricontrolla per qualche
+  // rAF e si corregge finché la posizione non è stabile sul bersaglio.
   React.useEffect(() => {
     if (!targetArticle) return;
-    const el = scrollRef.current?.querySelector<HTMLElement>(
+    const container = scrollRef.current;
+    const el = container?.querySelector<HTMLElement>(
       `#${CSS.escape(targetArticle.anchor)}`,
     );
-    if (!el) return;
+    if (!container || !el) return;
     // jsdom non implementa scrollIntoView: guardia per i test.
     el.scrollIntoView?.({ block: "start" });
     el.classList.remove("pulse-articolo");
     void el.offsetWidth; // reflow: fa ripartire l'animazione
     el.classList.add("pulse-articolo");
+
+    // Correzione post-layout (vedi sopra): a ogni frame si misura la
+    // deriva REALE del bersaglio dal bordo del viewport (rect, non stime)
+    // e si corregge scrollTop direttamente — ripetere scrollIntoView non
+    // basta: Firefox ricalcola lo stesso bersaglio sbagliato. Ci si ferma
+    // appena la posizione è giusta, con un tetto di sicurezza di 12 frame.
+    const margin = Number.parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+    let frames = 0;
+    let stable = 0;
+    let raf = 0;
+    const settle = () => {
+      const drift =
+        el.getBoundingClientRect().top -
+        container.getBoundingClientRect().top -
+        margin;
+      if (Math.abs(drift) > 1) {
+        container.scrollTop += drift;
+        stable = 0;
+      } else {
+        stable += 1; // due frame fermi di fila: assestato davvero
+      }
+      frames += 1;
+      if (stable < 2 && frames < 12) raf = requestAnimationFrame(settle);
+    };
+    if (typeof requestAnimationFrame === "function") {
+      raf = requestAnimationFrame(settle);
+    }
+    return () => cancelAnimationFrame(raf);
   }, [target, targetArticle]);
 
   // Titolo amichevole: la denominazione corrente del registro quando lo

@@ -156,6 +156,9 @@ describe("ActPanel", () => {
   it("re-target nello stesso atto: nessun refetch, evidenziato aggiornato", async () => {
     const { container, rerender } = await renderPanel();
     expect(fetchActMock).toHaveBeenCalledTimes(1);
+    // il primo bersaglio è stato scrollato all'apertura
+    expect(container.querySelector("#art-2051")!.scrollIntoView).toHaveBeenCalled();
+    (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockClear();
 
     rerender(
       <ActPanel
@@ -170,6 +173,23 @@ describe("ActPanel", () => {
     expect(highlighted).toHaveLength(1);
     expect(highlighted[0]).toHaveTextContent(/trascrizione/);
     expect(container.querySelector("#art-2643")).toHaveClass("pulse-articolo");
+    // il re-target nello stesso atto DEVE riscrollare al nuovo articolo
+    // (contexts = i `this` delle chiamate: lo scroll è partito da #art-2643)
+    const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    expect(scrollSpy.mock.contexts).toContain(container.querySelector("#art-2643"));
+  });
+
+  it("re-target sulla stessa citazione (oggetto target nuovo): riscrolla", async () => {
+    const { container, rerender } = await renderPanel();
+    const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollSpy.mockClear();
+
+    // page.tsx crea un oggetto target NUOVO ad ogni click: anche a parità
+    // di atto+articolo lo scroll (e l'impulso) devono ripartire.
+    rerender(<ActPanel target={{ ...TARGET }} onClose={vi.fn()} />);
+    await act(async () => {});
+
+    expect(scrollSpy.mock.contexts).toContain(container.querySelector("#art-2051"));
   });
 
   it("re-target su un altro atto: refetch e nuovo contenuto", async () => {
