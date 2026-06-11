@@ -42,6 +42,7 @@ import * as React from "react";
 
 import { actRefLabel, actRefName } from "@/lib/act-labels";
 import { fetchAct, type ActArticle, type ActDetail } from "@/lib/api";
+import { dedupPartitionLabel, renderNormText } from "@/lib/norm-text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -345,7 +346,9 @@ function VigenzaBadge({ vigenza }: { vigenza: string }) {
 function Breadcrumb({ act, article }: { act: ActDetail; article: ActArticle }) {
   const crumbs = [
     actRefName(act.act_ref) ?? act.title ?? actRefLabel(act.act_ref),
-    ...article.path,
+    // il corpus duplica talvolta l'etichetta di partizione ("CAPO II CAPO
+    // II DISPOSIZIONI…"): dedup di display, vedi lib/norm-text.tsx
+    ...article.path.map(dedupPartitionLabel),
     `art. ${article.number}`,
   ];
   return (
@@ -402,7 +405,7 @@ function PartitionHeader({ path }: { path: string[] }) {
   return (
     <div className="mt-8 mb-2 border-b border-border pb-1 first:mt-0">
       <p className="font-sans text-[0.6875rem] font-medium tracking-[0.08em] text-muted-foreground [font-variant-caps:small-caps]">
-        {path.join("  ·  ")}
+        {path.map(dedupPartitionLabel).join("  ·  ")}
       </p>
     </div>
   );
@@ -435,7 +438,7 @@ const ArticleBlock = React.memo(function ArticleBlock({
       <div className="min-w-0">
         {article.heading ? (
           <h3 className="mb-1.5 text-[0.9375rem] leading-6 italic">
-            {article.heading}
+            {renderNormText(article.heading)}
           </h3>
         ) : null}
         {article.commi.map((comma, i) => (
@@ -459,7 +462,7 @@ const ArticleBlock = React.memo(function ArticleBlock({
                 {comma.number}
               </sup>
             ) : null}
-            {comma.text}
+            {renderNormText(comma.text)}
           </p>
         ))}
       </div>
