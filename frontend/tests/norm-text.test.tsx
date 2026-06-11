@@ -67,6 +67,26 @@ describe("renderNormText", () => {
     }
   });
 
+  it("rende come UN'unica <a> l'ancora multilinea reale delle note all'art. 5 di legge-526-1999", () => {
+    // Ancora che attraversa un a-capo, presa verbatim dal corpus: 7 dei
+    // 193 link di legge-526-1999 hanno questa forma.
+    const anchor = "Art. 5:  \n- La legge 24 novembre 1981, n. 689";
+    const urn =
+      "http://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:legge:1981-11-24;689~art5";
+    const { container } = render(<p>{renderNormText(`Note all'[${anchor}](${urn})`)}</p>);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", urn);
+    // textContent preservato byte per byte, a-capo compreso
+    expect(links[0].textContent).toBe(anchor);
+    expect(container.textContent).toBe(`Note all'${anchor}`);
+  });
+
+  it("lascia letterale un url oltre i 2048 caratteri", () => {
+    const text = `Vedi [art. 1](https://a.example/${"x".repeat(2048)}) per i dettagli.`;
+    expect(renderNormText(text)).toEqual([text]);
+  });
+
   it("gestisce con grazia le quadre annidate `[a[b](u)`", () => {
     // url non-http: nulla combacia, tutto letterale
     expect(renderNormText("[a[b](u)")).toEqual(["[a[b](u)"]);

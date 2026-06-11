@@ -18,15 +18,19 @@
 import type { ReactNode } from "react";
 
 /**
- * `[ancora](url)`: l'ancora non può contenere quadre né a-capo (così
+ * `[ancora](url)`: l'ancora non può contenere quadre (così
  * l'annidato `[a[b](url)` degrada con grazia: "[a" letterale + link "b",
- * come farebbe un parser markdown); l'url deve
+ * come farebbe un parser markdown) ma può attraversare un a-capo — il
+ * corpus contiene ancore multilinea reali, es. le note all'art. 5 di
+ * legge-526-1999; l'url deve
  * iniziare con http(s):// e non può contenere spazi o `)` (gli URN
- * Normattiva usano `?:;~`, mai parentesi). Tutto ciò che non combacia
- * esattamente — niente parentesi di chiusura, schema non-http
- * (`javascript:` ecc.), quadre annidate — resta testo letterale.
+ * Normattiva usano `?:;~`, mai parentesi), con lunghezza limitata a 2048
+ * (rende lineare anche l'unico caso di backtracking quadratico). Tutto
+ * ciò che non combacia esattamente — niente parentesi di chiusura,
+ * schema non-http (`javascript:` ecc.), quadre annidate — resta testo
+ * letterale.
  */
-const MD_LINK = /\[([^[\]\n]*)\]\((https?:\/\/[^\s)]+)\)/g;
+const MD_LINK = /\[([^[\]]*)\]\((https?:\/\/[^\s)]{1,2048})\)/g;
 
 /**
  * Spezza il testo sui link markdown e rende le ancore come <a> esterni,
