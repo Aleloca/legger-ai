@@ -521,6 +521,15 @@ zero marker malformati, zero estremi inventati, trappole gestite.
 **Decisione embedder produzione**: rinviata alla scelta di budget (4-large massimizza
 la robustezza, 4 costa la metà con pari resa semantica + fast path davanti).
 
+## Reranking (E3)
+
+Misurato il delta di un reranker cross-encoder sopra l'hybrid search (stesse 30
+query): recall@10 96,7% → 96,7% (+0,0pp), recall@5 93,3% → 83,3%, MRR
+0,734 → 0,748, latenza 0,53s → 132,77s/query su CPU. A fronte di un guadagno
+trascurabile su MRR, nessun guadagno su recall@10, una regressione su recall@5 e
+~250x di latenza, il reranking resta **disattivato di default** (flag
+`rerank_enabled`). Report JSON in `backend/eval/results/`.
+
 ---
 
 # Appendice — Collisioni di filename su filesystem case-insensitive (11 giugno 2026)

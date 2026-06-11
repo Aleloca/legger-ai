@@ -172,9 +172,7 @@ def test_file_vanishes_between_stat_and_parse_503(
 
 
 def test_cors_header_for_nextjs_dev_origin(client: TestClient) -> None:
-    response = client.get(
-        "/acts/dlgs-1-2018", headers={"Origin": "http://localhost:3000"}
-    )
+    response = client.get("/acts/dlgs-1-2018", headers={"Origin": "http://localhost:3000"})
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
 
 

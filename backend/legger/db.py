@@ -49,9 +49,7 @@ acts = Table(
     Column("year", Integer),
     Column("date_pub", Date),
     Column("source", Text),  # ActRef derivation source: header | urn | filename
-    CheckConstraint(
-        "vigenza IN ('vigente', 'abrogato', 'decaduto')", name="ck_acts_vigenza"
-    ),
+    CheckConstraint("vigenza IN ('vigente', 'abrogato', 'decaduto')", name="ck_acts_vigenza"),
     Index("ix_acts_collection", "collection"),
     Index("ix_acts_vigenza", "vigenza"),
 )

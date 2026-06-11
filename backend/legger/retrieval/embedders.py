@@ -343,8 +343,7 @@ class VoyageEmbedder:
         batch_tokens = 0
         for text, tokens in zip(texts, self._count_tokens(texts), strict=True):
             if batch and (
-                len(batch) >= self.batch_size
-                or batch_tokens + tokens > self.max_tokens_per_batch
+                len(batch) >= self.batch_size or batch_tokens + tokens > self.max_tokens_per_batch
             ):
                 yield batch
                 batch, batch_tokens = [], 0

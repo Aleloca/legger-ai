@@ -200,9 +200,7 @@ def _parse_markdown(text: str) -> Act:
         if kind == "h2":
             match = SETEXT_ART.match(payload)
             if match:
-                open_article(
-                    normalize_number(match.group(1), match.group(2)), "setext", list(path)
-                )
+                open_article(normalize_number(match.group(1), match.group(2)), "setext", list(path))
                 continue
             if _ART_UNICO.match(payload):
                 open_article("unico", "setext", list(path))

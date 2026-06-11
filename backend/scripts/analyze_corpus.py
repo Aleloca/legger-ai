@@ -253,9 +253,13 @@ def report() -> None:
     print()
     print(f"- Percorso: `{corpus}`")
     print(f"- Commit analizzato: `{info['sha']}` del {info['commit_date']}")
-    print(f"- Numero di commit nella storia: {info['n_commits']} (clone shallow: {info['shallow']})")
+    print(
+        f"- Numero di commit nella storia: {info['n_commits']} (clone shallow: {info['shallow']})"
+    )
     print(f"- Data dell'analisi: {date.today().isoformat()}")
-    print(f"- Generato da `backend/scripts/analyze_corpus.py` (campione: {SAMPLE_PER_COLLECTION} file/collezione, seed {SEED})")
+    print(
+        f"- Generato da `backend/scripts/analyze_corpus.py` (campione: {SAMPLE_PER_COLLECTION} file/collezione, seed {SEED})"
+    )
 
     # ------------------------------------------------------------- collezioni
     print()
@@ -271,7 +275,7 @@ def report() -> None:
         print(f"| {name} | {len(files)} | {fmt_size(size)} |")
     print(f"| **Totale** | **{tot_files}** | **{fmt_size(tot_size)}** |")
     print()
-    print("> NB: le dimensioni includono il padding NUL descritto in \"Casi patologici\":")
+    print('> NB: le dimensioni includono il padding NUL descritto in "Casi patologici":')
     print("> la quasi totalita' dei ~71 GB di `Regi decreti` e' padding, non testo.")
     print()
     print(
@@ -300,7 +304,11 @@ def report() -> None:
     scans: dict[str, list[tuple[str, FileScan]]] = {}
     for name, files in collections.items():
         names = [fn for fn, _ in files]
-        chosen = names if len(names) <= SAMPLE_PER_COLLECTION else rng.sample(names, SAMPLE_PER_COLLECTION)
+        chosen = (
+            names
+            if len(names) <= SAMPLE_PER_COLLECTION
+            else rng.sample(names, SAMPLE_PER_COLLECTION)
+        )
         scans[name] = [(fn, scan_file(corpus / name / fn)) for fn in sorted(chosen)]
 
     # --------------------------------------------------------------- formati
@@ -315,7 +323,9 @@ def report() -> None:
     print("   `YYYY-MM-DD_<codice>_VIGENZA_<data>_V0.md` o `..._ORIGINALE_V0.md` iniziano con")
     print("   `PGh0bWw` (= base64 di `<html`). NON sono Markdown.")
     print()
-    print("| Collezione | Campione | Markdown | Base64-HTML | Frontmatter YAML | Senza intestazioni |")
+    print(
+        "| Collezione | Campione | Markdown | Base64-HTML | Frontmatter YAML | Senza intestazioni |"
+    )
     print("| --- | ---: | ---: | ---: | ---: | ---: |")
     for name, items in scans.items():
         n = len(items)
@@ -346,7 +356,9 @@ def report() -> None:
     print("Tre stili distinti di marcatura degli articoli:")
     print()
     print("- `atx`: intestazione ATX `### Art. N` (atti recenti, ~post 2000);")
-    print("- `setext`: intestazione setext `Art. N` + `----` (es. articoli del decreto di approvazione);")
+    print(
+        "- `setext`: intestazione setext `Art. N` + `----` (es. articoli del decreto di approvazione);"
+    )
     print("- `plain`: riga piatta `<Titolo atto>-art. N [bis|ter|...]` NON marcata come heading")
     print("  (atti storici multivigenti, es. Codice Penale, Codice di procedura civile).")
     print()
@@ -495,7 +507,9 @@ def report() -> None:
             if pad > 1024:
                 padded += 1
                 pad_bytes += pad
-        print(f"| {name} | {padded}/{len(items)} | {fmt_size(pad_bytes)} | {fmt_size(sample_bytes)} |")
+        print(
+            f"| {name} | {padded}/{len(items)} | {fmt_size(pad_bytes)} | {fmt_size(sample_bytes)} |"
+        )
 
     print()
     print("### Duplicazione tra collezioni")

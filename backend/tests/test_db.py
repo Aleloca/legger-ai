@@ -44,9 +44,7 @@ def test_ingestion_runs_schema() -> None:
     assert ingestion_runs.c.id.autoincrement is True
     for name in ("files_processed", "files_skipped", "errors"):
         assert ingestion_runs.c[name].server_default is not None, name
-    check_names = {
-        c.name for c in ingestion_runs.constraints if isinstance(c, CheckConstraint)
-    }
+    check_names = {c.name for c in ingestion_runs.constraints if isinstance(c, CheckConstraint)}
     assert {"ck_ingestion_runs_kind", "ck_ingestion_runs_status"} <= check_names
 
 
@@ -58,9 +56,7 @@ def test_ingestion_progress_schema() -> None:
 
 
 def test_get_engine_uses_settings_url() -> None:
-    settings = Settings(
-        _env_file=None, database_url="postgresql+psycopg://u:p@db:5432/x"
-    )
+    settings = Settings(_env_file=None, database_url="postgresql+psycopg://u:p@db:5432/x")
     engine = get_engine(settings)
     assert engine.url.render_as_string(hide_password=False).endswith("u:p@db:5432/x")
     assert engine.dialect.name == "postgresql"
@@ -81,9 +77,7 @@ def engine() -> Iterator[Engine]:
     with eng.begin() as conn:
         conn.execute(acts.delete().where(acts.c.act_ref == _ACT_REF))
         conn.execute(
-            ingestion_progress.delete().where(
-                ingestion_progress.c.file_path == _FILE_PATH
-            )
+            ingestion_progress.delete().where(ingestion_progress.c.file_path == _FILE_PATH)
         )
     eng.dispose()
 
@@ -175,23 +169,17 @@ def test_upsert_progress_insert_then_update(engine: Engine) -> None:
     upsert_progress(engine, file_path=_FILE_PATH, commit_sha="aaa111")
     with engine.connect() as conn:
         row = conn.execute(
-            select(ingestion_progress).where(
-                ingestion_progress.c.file_path == _FILE_PATH
-            )
+            select(ingestion_progress).where(ingestion_progress.c.file_path == _FILE_PATH)
         ).one()
     assert row.commit_sha == "aaa111"
     assert row.act_ref is None
     first_indexed_at = row.indexed_at
     assert first_indexed_at is not None
 
-    upsert_progress(
-        engine, file_path=_FILE_PATH, commit_sha="bbb222", act_ref=_ACT_REF
-    )
+    upsert_progress(engine, file_path=_FILE_PATH, commit_sha="bbb222", act_ref=_ACT_REF)
     with engine.connect() as conn:
         rows = conn.execute(
-            select(ingestion_progress).where(
-                ingestion_progress.c.file_path == _FILE_PATH
-            )
+            select(ingestion_progress).where(ingestion_progress.c.file_path == _FILE_PATH)
         ).all()
     assert len(rows) == 1
     assert rows[0].commit_sha == "bbb222"
@@ -207,12 +195,8 @@ def test_ingestion_runs_server_defaults(engine: Engine) -> None:
             .values(kind="bootstrap", status="running")
             .returning(ingestion_runs.c.id)
         ).scalar_one()
-        row = conn.execute(
-            select(ingestion_runs).where(ingestion_runs.c.id == run_id)
-        ).one()
+        row = conn.execute(select(ingestion_runs).where(ingestion_runs.c.id == run_id)).one()
         assert row.files_processed == 0
         assert row.files_skipped == 0
         assert row.errors == []
-        conn.execute(
-            ingestion_runs.delete().where(ingestion_runs.c.id == run_id)
-        )
+        conn.execute(ingestion_runs.delete().where(ingestion_runs.c.id == run_id))

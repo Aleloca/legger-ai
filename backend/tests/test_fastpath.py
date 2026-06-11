@@ -397,13 +397,13 @@ def test_resolve_probe_failure_fails_open(caplog) -> None:
 
 def test_resolve_probes_all_estremi_refs_in_one_query(engine) -> None:
     queries: list[str] = []
-    event.listen(
-        engine, "before_cursor_execute", lambda conn, cur, stmt, *a: queries.append(stmt)
-    )
+    event.listen(engine, "before_cursor_execute", lambda conn, cur, stmt, *a: queries.append(stmt))
     client = FakeQdrant([payload("dlgs-81-2008", "18"), payload("dlgs-152-2006", "256")])
     hits = resolve_refs(
         [
-            ref("dlgs-81-2008", act_type="decreto_legislativo", number="81", year=2008, article="18"),
+            ref(
+                "dlgs-81-2008", act_type="decreto_legislativo", number="81", year=2008, article="18"
+            ),
             ref(
                 "dlgs-152-2006",
                 act_type="decreto_legislativo",

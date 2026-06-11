@@ -341,9 +341,7 @@ class TestCodiceCivileAkn:
 
     def test_art_2051_rubric(self, codice_civile: Act) -> None:
         art = next(
-            a
-            for a in codice_civile.articles
-            if a.path == ["CODICE CIVILE"] and a.number == "2051"
+            a for a in codice_civile.articles if a.path == ["CODICE CIVILE"] and a.number == "2051"
         )
         assert art.heading == "Danno cagionato da cosa in custodia"
         assert "caso fortuito" in art.commi[0].text
@@ -555,9 +553,7 @@ class TestDegenerateInputs:
 
 
 class TestAknUnmatchedArtnum:
-    def test_warning_logged_and_raw_number_kept(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_warning_logged_and_raw_number_kept(self, caplog: pytest.LogCaptureFixture) -> None:
         html = (
             '<html><body><h2 class="article-num-akn">Articolo strano</h2>'
             '<span class="art-just-text-akn">testo del corpo</span></body></html>'
