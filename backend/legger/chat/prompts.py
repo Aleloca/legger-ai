@@ -28,7 +28,9 @@ abrogato o modificato, riferiscilo fedelmente: non ricostruire mai il testo prev
 [[act_ref|art.N|c.M]], dove act_ref è l'identificativo tra parentesi quadre \
 nell'intestazione del passaggio citato (la parte prima di "#"), N il numero dell'articolo \
 e M il comma. Ometti il comma quando non è identificabile con certezza: [[act_ref|art.N]]. \
-Esempi: [[codice-civile|art.2051]], [[dlgs-285-1992|art.186|c.2]]. I marker verranno resi \
+Esempi: [[codice-civile|art.2051]], [[dlgs-285-1992|art.186|c.2]]. La granularità del \
+marker si ferma al comma: MAI aggiungere campi oltre c.M (niente |lett.a, |n.1 o simili — \
+lettere e numeri si indicano nella prosa, fuori dal marker). I marker verranno resi \
 come chip cliccabili nell'interfaccia: usali sempre, non usare altri formati di citazione \
 e non citare mai un atto o un articolo assente dal contesto.
 

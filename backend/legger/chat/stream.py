@@ -29,10 +29,20 @@ MARKER_BUFFER_CAP = 200
 _OPEN = "[["
 _CLOSE = "]]"
 
-#: Strict contract format: ``[[act_ref|art.N]]`` or ``[[act_ref|art.N|c.M]]``,
+#: Contract format: ``[[act_ref|art.N]]`` or ``[[act_ref|art.N|c.M]]``,
 #: with act_ref a lowercase slug (same alphabet as the pipeline's marker
-#: regex). Anything else inside ``[[...]]`` is NOT a citation.
-_MARKER_RE = re.compile(r"\A\[\[([a-z0-9-]+)\|art\.([^|\[\]\s]+)(?:\|c\.([^|\[\]\s]+))?\]\]\Z")
+#: regex). The model sometimes over-specifies beyond the comma (e.g.
+#: ``[[slug|art.54|c.3|lett.a]]`` or ``[[slug|art.54|lett.a]]``): any extra
+#: ``|field`` segments after ``art.N`` are TOLERATED and ignored — the
+#: parsed citation keeps only act_ref/article/comma, and a non-``c.`` third
+#: field yields ``comma=None``. Anything else inside ``[[...]]`` is NOT a
+#: citation. Mirrored by MARKER_RE in frontend/lib/parse-markers.ts.
+_MARKER_RE = re.compile(
+    r"\A\[\[([a-z0-9-]+)\|art\.([^|\[\]\s]+)"
+    r"(?:\|c\.([^|\[\]\s]+))?"  # optional comma field
+    r"(?:\|[^|\[\]\s]+)*"  # extra fields (lett./n./…): tolerated, ignored
+    r"\]\]\Z"
+)
 
 
 @dataclass(frozen=True)

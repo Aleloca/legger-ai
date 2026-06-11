@@ -92,6 +92,15 @@ CASES = {
         ["[[dlgs-285-1992|art.186|c.2]]"],
         [MarkerPiece("[[dlgs-285-1992|art.186|c.2]]")],
     ),
+    "marker_with_extra_field_split": (
+        # Over-specified marker (4th field) split across deltas: still one piece.
+        ["Vedi [[dlgs-151-2001|art.54|c.3", "|lett.a]] qui."],
+        [
+            TextPiece("Vedi "),
+            MarkerPiece("[[dlgs-151-2001|art.54|c.3|lett.a]]"),
+            TextPiece(" qui."),
+        ],
+    ),
     "empty_deltas_ignored": (
         ["", "testo", ""],
         [TextPiece("testo")],
@@ -217,7 +226,33 @@ def test_parse_marker_suffixed_article() -> None:
     assert parsed.article == "613-bis"
 
 
+def test_parse_marker_extra_field_after_comma_is_ignored() -> None:
+    """Over-specified 4-field marker: comma kept, the lett. tail dropped."""
+    parsed = parse_marker("[[dlgs-151-2001|art.54|c.3|lett.a]]")
+    assert parsed is not None
+    assert parsed.act_ref == "dlgs-151-2001"
+    assert parsed.article == "54"
+    assert parsed.comma == "3"
+
+
+def test_parse_marker_non_comma_third_field_is_extra() -> None:
+    """A third field that is not ``c.``-prefixed is extra, not a failure."""
+    parsed = parse_marker("[[dlgs-151-2001|art.54|lett.a]]")
+    assert parsed is not None
+    assert parsed.act_ref == "dlgs-151-2001"
+    assert parsed.article == "54"
+    assert parsed.comma is None
+
+
+def test_parse_marker_five_fields() -> None:
+    parsed = parse_marker("[[dlgs-151-2001|art.54|c.3|lett.a|n.2]]")
+    assert parsed is not None
+    assert parsed.comma == "3"
+
+
 def test_parse_marker_malformed_returns_none() -> None:
     assert parse_marker("[[solo testo libero]]") is None
     assert parse_marker("[[codice-civile]]") is None
     assert parse_marker("[[CODICE|art.1]]") is None  # act_ref slugs are lowercase
+    assert parse_marker("[[codice-civile|art.1||x]]") is None  # empty extra field
+    assert parse_marker("[[codice-civile|art.1|lett. a]]") is None  # space in field

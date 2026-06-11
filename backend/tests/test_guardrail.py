@@ -187,4 +187,17 @@ def test_malformed_markers_are_rejected_upstream() -> None:
     # marker comes from parse_marker, which rejects anything outside the
     # contract format — so malformed input never reaches the guardrail.
     assert parse_marker("[[non un marker]]") is None
-    assert parse_marker("[[codice-civile|art.2051|c.1|extra]]") is None
+    assert parse_marker("[[codice-civile|art.2051 c.1]]") is None
+
+
+def test_over_specified_marker_checks_comma_as_today() -> None:
+    # An over-specified marker (extra fields beyond c.M) parses to the same
+    # ParsedMarker shape: the guardrail checks act/article/comma exactly as
+    # for a 3-field marker, ignoring the lett. tail.
+    parsed = parse_marker("[[codice-civile|art.2051|c.3|lett.a]]")
+    assert parsed is not None
+    hit = make_hit(commi=["2", "3"])
+    check = check_citation(parsed, [hit])
+    assert check.verified is True
+    assert check.reason == "ok"
+    assert check.hit is hit
