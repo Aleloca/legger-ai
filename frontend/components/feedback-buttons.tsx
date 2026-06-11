@@ -37,14 +37,21 @@ const THANKS_TEXT = "Grazie per il feedback.";
 type Phase = "idle" | "reason" | "sending" | "sent";
 
 /**
- * True (e marca la sessione) solo per la prima istanza che lo chiede:
- * la nota privacy si mostra una volta per sessione, poi tace.
+ * Già rivendicata in questa pagina: copre il caso in cui la SCRITTURA
+ * su sessionStorage fallisce (es. quota) — meglio nessuna nota che una
+ * a ogni messaggio.
  */
-function claimPrivacyNotice(): boolean {
+let noticeClaimed = false;
+
+/**
+ * Lettura PURA (nessuna scrittura): sicura come initializer di useState
+ * anche sotto StrictMode, dove la doppia invocazione dà lo stesso esito.
+ * La scrittura del flag avviene nell'effect del componente.
+ */
+function shouldShowPrivacyNotice(): boolean {
+  if (noticeClaimed || typeof window === "undefined") return false;
   try {
-    if (window.sessionStorage.getItem(PRIVACY_NOTICE_KEY)) return false;
-    window.sessionStorage.setItem(PRIVACY_NOTICE_KEY, "1");
-    return true;
+    return !window.sessionStorage.getItem(PRIVACY_NOTICE_KEY);
   } catch {
     return false; // storage negato: meglio nessuna nota che una a ogni messaggio
   }
@@ -68,12 +75,18 @@ export function FeedbackButtons({
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [reason, setReason] = React.useState("");
   const [failed, setFailed] = React.useState(false);
-  const [showNotice, setShowNotice] = React.useState(false);
-  // Il claim va in un effect, mai nel render: sotto StrictMode (dev) il
-  // doppio render brucerebbe il flag e la nota non comparirebbe mai.
+  // Initializer puro (sola lettura): consistente sotto StrictMode. La
+  // SCRITTURA del flag sta nell'effect — idempotente e senza setState.
+  const [showNotice] = React.useState(shouldShowPrivacyNotice);
   React.useEffect(() => {
-    if (claimPrivacyNotice()) setShowNotice(true);
-  }, []);
+    if (!showNotice) return;
+    noticeClaimed = true;
+    try {
+      window.sessionStorage.setItem(PRIVACY_NOTICE_KEY, "1");
+    } catch {
+      // noticeClaimed in memoria basta a non ripetere la nota.
+    }
+  }, [showNotice]);
 
   const send = async (rating: 1 | -1, reasonText?: string) => {
     setPhase("sending");
