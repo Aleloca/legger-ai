@@ -71,6 +71,7 @@
   --color-abrogato-muted: var(--abrogato-muted);
   --color-non-verificato: var(--non-verificato);
   --color-non-verificato-muted: var(--non-verificato-muted);
+  --color-evidenzia: var(--evidenzia);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -115,6 +116,9 @@
   --abrogato-muted: #edeae3;
   --non-verificato: #9a6b1f; /* ambra */
   --non-verificato-muted: #f6ecd9;
+
+  /* evidenziatore caldo: comma citato nella split-view, impulso articolo */
+  --evidenzia: #f3e8cd;
 
   /* geometria contenuta: niente arrotondamenti vistosi */
   --radius: 0.375rem;
@@ -164,6 +168,28 @@
   }
   100% {
     content: "...";
+  }
+}
+
+/*
+ * Impulso dell'articolo citato nella split-view: carta → evidenziatore
+ * caldo → carta. La classe è applicata imperativamente (e ri-applicata
+ * dopo un reflow) ad ogni re-target, così l'animazione riparte anche
+ * cliccando due volte la stessa citazione.
+ */
+.pulse-articolo {
+  animation: pulse-articolo 1.8s ease-out 1;
+}
+
+@keyframes pulse-articolo {
+  0% {
+    background-color: transparent;
+  }
+  20% {
+    background-color: var(--evidenzia);
+  }
+  100% {
+    background-color: transparent;
   }
 }
 

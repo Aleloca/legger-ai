@@ -27,7 +27,11 @@ export type Segment =
       article: string;
       comma: string | null;
     }
-  | { type: "pending" };
+  | {
+      type: "pending";
+      /** Il frammento grezzo `[[...` in coda (reso come testo a fine stream). */
+      value: string;
+    };
 
 /** Formato stretto del contratto (stesso regex del backend). */
 const MARKER_RE = /^\[\[([a-z0-9-]+)\|art\.([^|[\]\s]+)(?:\|c\.([^|[\]\s]+))?\]\]$/;
@@ -90,7 +94,7 @@ export function parseMarkers(text: string): Segment[] {
       // plausibile più avanti.
       if (isMarkerPrefix(text.slice(open))) {
         flushText();
-        segments.push({ type: "pending" });
+        segments.push({ type: "pending", value: text.slice(open) });
         return segments;
       }
       buf += OPEN;

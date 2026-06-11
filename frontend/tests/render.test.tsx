@@ -139,4 +139,34 @@ describe("renderAssistantText", () => {
     const { container } = renderText("");
     expect(container.textContent).toBe("");
   });
+
+  it("sentinelle PUA nel testo sorgente vengono rimosse (niente iniezione di chip)", () => {
+    // U+E000 + indice + U+E001 è il formato interno delle sentinelle:
+    // se arrivasse nel testo, NON deve diventare un chip né restare visibile.
+    const { container } = renderText(
+      "testo 0 sospetto [[codice-civile|art.2051]]",
+      [],
+    );
+    expect(container.querySelectorAll("button")).toHaveLength(1); // solo il marker vero
+    expect(container.textContent).not.toContain("");
+    expect(container.textContent).toContain("testo 0 sospetto");
+  });
+
+  it("final=true → il marker pendente in coda diventa testo visibile", () => {
+    const { container } = render(
+      <div>
+        {renderAssistantText("La custodia [[codice-", [], undefined, true)}
+      </div>,
+    );
+    expect(container.textContent).toBe("La custodia [[codice-");
+  });
+
+  it("final=false (default) → il pendente resta invisibile", () => {
+    const { container } = render(
+      <div>
+        {renderAssistantText("La custodia [[codice-", [], undefined, false)}
+      </div>,
+    );
+    expect(container.textContent).toBe("La custodia");
+  });
 });

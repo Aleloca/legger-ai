@@ -14,10 +14,16 @@ import * as React from "react";
 
 import { Composer } from "@/components/composer";
 import { MessageList } from "@/components/message-list";
+import type { CitationRef } from "@/lib/render";
 import { streamChat } from "@/lib/sse";
 import type { ChatMessage } from "@/lib/types";
 
-export function Chat() {
+export function Chat({
+  onCitationClick,
+}: {
+  /** Click su un chip-citazione: apre la split-view della norma (G4). */
+  onCitationClick?: (ref: CitationRef) => void;
+}) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = React.useState(false);
   // "sto cercando nel corpus…": dall'invio fino al primo token. Parte
@@ -80,12 +86,12 @@ export function Chat() {
           onDone: ({ truncated }) => {
             setSearching(false);
             setStreaming(false);
-            if (truncated) patchLast((m) => ({ ...m, truncated: true }));
+            patchLast((m) => ({ ...m, final: true, truncated }));
           },
           onError: (message) => {
             setSearching(false);
             setStreaming(false);
-            patchLast((m) => ({ ...m, error: message }));
+            patchLast((m) => ({ ...m, final: true, error: message }));
           },
         },
         { signal: controller.signal },
@@ -96,7 +102,11 @@ export function Chat() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <MessageList messages={messages} searching={searching} />
+      <MessageList
+        messages={messages}
+        searching={searching}
+        onCitationClick={onCitationClick}
+      />
       <Composer onSend={send} disabled={streaming} />
     </div>
   );

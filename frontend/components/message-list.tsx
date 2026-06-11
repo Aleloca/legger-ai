@@ -9,7 +9,7 @@
 
 import * as React from "react";
 
-import { renderAssistantText } from "@/lib/render";
+import { renderAssistantText, type CitationRef } from "@/lib/render";
 import type { ChatMessage } from "@/lib/types";
 
 const STICK_THRESHOLD_PX = 96;
@@ -17,9 +17,11 @@ const STICK_THRESHOLD_PX = 96;
 export function MessageList({
   messages,
   searching,
+  onCitationClick,
 }: {
   messages: ChatMessage[];
   searching: boolean;
+  onCitationClick?: (ref: CitationRef) => void;
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const stickToBottom = React.useRef(true);
@@ -51,6 +53,7 @@ export function MessageList({
               key={i}
               message={message}
               searching={searching && i === messages.length - 1}
+              onCitationClick={onCitationClick}
             />
           ))
         )}
@@ -67,9 +70,11 @@ export function MessageList({
 const MessageRow = React.memo(function MessageRow({
   message,
   searching,
+  onCitationClick,
 }: {
   message: ChatMessage;
   searching: boolean;
+  onCitationClick?: (ref: CitationRef) => void;
 }) {
   if (message.role === "user") {
     return (
@@ -80,20 +85,33 @@ const MessageRow = React.memo(function MessageRow({
       </div>
     );
   }
-  return <AssistantMessage message={message} searching={searching} />;
+  return (
+    <AssistantMessage
+      message={message}
+      searching={searching}
+      onCitationClick={onCitationClick}
+    />
+  );
 });
 
 function AssistantMessage({
   message,
   searching,
+  onCitationClick,
 }: {
   message: ChatMessage;
   searching: boolean;
+  onCitationClick?: (ref: CitationRef) => void;
 }) {
-  // G4 cablerà qui l'apertura della split-view; oggi i chip sono no-op.
   const rendered = React.useMemo(
-    () => renderAssistantText(message.content, message.citations ?? []),
-    [message.content, message.citations],
+    () =>
+      renderAssistantText(
+        message.content,
+        message.citations ?? [],
+        onCitationClick,
+        message.final ?? false,
+      ),
+    [message.content, message.citations, message.final, onCitationClick],
   );
 
   return (

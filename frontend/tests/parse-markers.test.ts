@@ -104,37 +104,40 @@ describe("parseMarkers", () => {
     ]);
   });
 
-  it("trailing `[[` in coda → pending", () => {
+  it("trailing `[[` in coda → pending (con il frammento grezzo)", () => {
     expect(parseMarkers("Vedi [[")).toEqual([
       { type: "text", value: "Vedi " },
-      { type: "pending" },
+      { type: "pending", value: "[[" },
     ]);
   });
 
   it("trailing `[[codice-` in coda → pending", () => {
     expect(parseMarkers("Vedi [[codice-")).toEqual([
       { type: "text", value: "Vedi " },
-      { type: "pending" },
+      { type: "pending", value: "[[codice-" },
     ]);
   });
 
   it("trailing `[[x|art.1` in coda → pending", () => {
     expect(parseMarkers("Vedi [[x|art.1")).toEqual([
       { type: "text", value: "Vedi " },
-      { type: "pending" },
+      { type: "pending", value: "[[x|art.1" },
     ]);
   });
 
   it("trailing con metà della chiusura `]` → ancora pending", () => {
     expect(parseMarkers("Vedi [[x|art.1]")).toEqual([
       { type: "text", value: "Vedi " },
-      { type: "pending" },
+      { type: "pending", value: "[[x|art.1]" },
     ]);
   });
 
   it("pending risolto in marker quando arriva il resto del testo", () => {
     const partial = parseMarkers("Vedi [[codice-civile|art.20");
-    expect(partial.at(-1)).toEqual({ type: "pending" });
+    expect(partial.at(-1)).toEqual({
+      type: "pending",
+      value: "[[codice-civile|art.20",
+    });
 
     const full = parseMarkers("Vedi [[codice-civile|art.2051]] qui.");
     expect(full).toEqual([
@@ -153,7 +156,7 @@ describe("parseMarkers", () => {
   it("un `[[` implausibile non nasconde un marker pending successivo", () => {
     expect(parseMarkers("nota [[vedi sopra e [[codice-")).toEqual([
       { type: "text", value: "nota [[vedi sopra e " },
-      { type: "pending" },
+      { type: "pending", value: "[[codice-" },
     ]);
   });
 });

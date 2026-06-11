@@ -47,6 +47,14 @@ const SENTINEL_OPEN = "";
 const SENTINEL_CLOSE = "";
 const SENTINEL_RE = /(\d+)/g;
 
+/**
+ * Rimuove eventuali sentinelle PUA già presenti nel testo sorgente
+ * (iniezione: un testo che contenesse U+E000/U+E001 potrebbe altrimenti
+ * spacciarsi per chip o corrompere gli indici).
+ */
+const STRAY_SENTINELS_RE = /[]/g;
+const stripSentinels = (value: string) => value.replace(STRAY_SENTINELS_RE, "");
+
 /** Plugin remark: sostituisce le sentinelle nei nodi-testo con elementi `citation-chip`. */
 function remarkCitationChips() {
   return (tree: Root) => {
@@ -150,6 +158,11 @@ export function renderAssistantText(
   text: string,
   citations: Citation[],
   onCitationClick?: (ref: CitationRef) => void,
+  /**
+   * True quando lo stream è concluso (done/error): un eventuale segmento
+   * `pending` non può più risolversi in marker e viene reso come testo.
+   */
+  final = false,
 ): ReactNode {
   const segments = parseMarkers(text);
   const markers: MarkerSegment[] = [];
@@ -158,12 +171,13 @@ export function renderAssistantText(
     .map((segment) => {
       switch (segment.type) {
         case "text":
-          return segment.value;
+          return stripSentinels(segment.value);
         case "marker":
           markers.push(segment);
           return `${SENTINEL_OPEN}${markers.length - 1}${SENTINEL_CLOSE}`;
         case "pending":
-          return ""; // invisibile finché lo streaming non lo risolve
+          // invisibile finché lo streaming può ancora risolverlo
+          return final ? stripSentinels(segment.value) : "";
       }
     })
     .join("");

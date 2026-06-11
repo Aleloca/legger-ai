@@ -136,6 +136,47 @@ describe("Chat", () => {
     expect(screen.getByText("2 fonti consultate")).toBeInTheDocument();
   });
 
+  it("done → final: un marker pendente in coda diventa testo visibile", () => {
+    render(<Chat />);
+    sendMessage("domanda");
+    act(() => lastHandlers().onToken?.("Vedi [[codice-"));
+    // durante lo streaming il pendente è invisibile…
+    expect(screen.queryByText(/\[\[codice-/)).not.toBeInTheDocument();
+
+    act(() => lastHandlers().onDone?.({ stop_reason: "end_turn", truncated: false }));
+    // …al done non può più risolversi: resta come testo
+    expect(screen.getByText(/Vedi \[\[codice-/)).toBeInTheDocument();
+  });
+
+  it("error → final: il pendente diventa testo anche sul turno fallito", () => {
+    render(<Chat />);
+    sendMessage("domanda");
+    act(() => {
+      lastHandlers().onToken?.("Vedi [[codice-");
+      lastHandlers().onError?.("Errore.");
+    });
+    expect(screen.getByText(/Vedi \[\[codice-/)).toBeInTheDocument();
+  });
+
+  it("click su un chip → onCitationClick con il riferimento", () => {
+    const onCitationClick = vi.fn();
+    render(<Chat onCitationClick={onCitationClick} />);
+    sendMessage("domanda");
+    act(() => {
+      lastHandlers().onToken?.("Vedi [[codice-civile|art.2051|c.1]].");
+      lastHandlers().onDone?.({ stop_reason: "end_turn", truncated: false });
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cod. Civ., art. 2051, c. 1" }),
+    );
+    expect(onCitationClick).toHaveBeenCalledWith({
+      actRef: "codice-civile",
+      article: "2051",
+      comma: "1",
+      citation: undefined,
+    });
+  });
+
   it("il turno fallito (assistant vuoto) non entra nel payload successivo", () => {
     render(<Chat />);
     sendMessage("prima domanda");

@@ -59,6 +59,11 @@ export interface ChatMessage {
   citations?: Citation[];
   /** Solo assistant: true se `done` ha riportato truncated. */
   truncated?: boolean;
+  /**
+   * Solo assistant: true quando lo stream è concluso (done o error).
+   * Il renderer mostra come testo un eventuale marker pendente in coda.
+   */
+  final?: boolean;
   /** Solo assistant: messaggio dell'evento `error` (terminale). */
   error?: string | null;
 }
