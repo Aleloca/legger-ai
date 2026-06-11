@@ -42,7 +42,13 @@ import * as React from "react";
 
 import { actRefLabel, actRefName } from "@/lib/act-labels";
 import { fetchAct, type ActArticle, type ActDetail } from "@/lib/api";
-import { dedupPartitionLabel, renderNormText } from "@/lib/norm-text";
+import {
+  actHasNovellaMarkers,
+  commaSelfNumbered,
+  dedupPartitionLabel,
+  isNovellatoArticle,
+  renderNormText,
+} from "@/lib/norm-text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -342,6 +348,26 @@ function VigenzaBadge({ vigenza }: { vigenza: string }) {
   );
 }
 
+/**
+ * Pill «testo novellato» accanto alla rubrica: l'articolo è interamente
+ * racchiuso tra (( )) — inserito/riscritto da provvedimenti successivi.
+ * Della famiglia visiva dei badge di vigenza, ma su token neutri
+ * (muted): non è uno stato di allerta, è un'informazione di lettura.
+ */
+function NovellatoBadge({ className }: { className?: string }) {
+  return (
+    <span
+      title="Articolo inserito o modificato da provvedimenti successivi rispetto al testo originale (convenzione Normattiva: doppie parentesi)"
+      className={cn(
+        "inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-px align-[0.125em] font-sans text-[0.6875rem] font-medium tracking-wide text-muted-foreground not-italic [font-variant-caps:small-caps]",
+        className,
+      )}
+    >
+      testo novellato
+    </span>
+  );
+}
+
 /** Titolo dell'atto → partizioni dell'articolo citato → art. N. */
 function Breadcrumb({ act, article }: { act: ActDetail; article: ActArticle }) {
   const crumbs = [
@@ -378,6 +404,9 @@ function ActBody({
   targetAnchor: string | null;
   targetComma: string | null;
 }) {
+  // La legenda della convenzione (( )) compare solo se l'atto contiene
+  // davvero dei marcatori: calcolato una volta per atto caricato.
+  const hasNovella = React.useMemo(() => actHasNovellaMarkers(act), [act]);
   return (
     <div className="mx-auto max-w-2xl font-serif">
       {act.articles.map((article, i) => {
@@ -396,6 +425,12 @@ function ActBody({
           </React.Fragment>
         );
       })}
+      {hasNovella ? (
+        <p className="mt-10 border-t border-border pt-3 font-sans text-xs leading-5 text-muted-foreground">
+          (( )) — testo inserito o modificato da provvedimenti successivi
+          (convenzione Normattiva)
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -424,6 +459,9 @@ const ArticleBlock = React.memo(function ArticleBlock({
   /** Il comma da tenere evidenziato (solo sull'articolo citato). */
   highlightComma: string | null;
 }) {
+  // Badge «testo novellato»: l'intero corpo dell'articolo è racchiuso
+  // tra (( )) — articolo inserito/riscritto dal consolidamento (A8).
+  const novellato = isNovellatoArticle(article.commi);
   return (
     <article
       id={article.anchor}
@@ -439,7 +477,12 @@ const ArticleBlock = React.memo(function ArticleBlock({
         {article.heading ? (
           <h3 className="mb-1.5 text-[0.9375rem] leading-6 italic">
             {renderNormText(article.heading)}
+            {novellato ? <NovellatoBadge className="ml-2" /> : null}
           </h3>
+        ) : novellato ? (
+          <div className="mb-1.5">
+            <NovellatoBadge />
+          </div>
         ) : null}
         {article.commi.map((comma, i) => (
           <p
@@ -457,7 +500,10 @@ const ArticleBlock = React.memo(function ArticleBlock({
                 "-mx-1.5 rounded-sm bg-evidenzia px-1.5",
             )}
           >
-            {comma.number ? (
+            {/* Esponente solo quando il testo NON si auto-numera già
+                («1. In attuazione…»): altrimenti il numero comparirebbe
+                due volte («1 1. In attuazione…»). */}
+            {comma.number && !commaSelfNumbered(comma.number, comma.text) ? (
               <sup className="mr-1 font-sans text-[0.6875rem] text-muted-foreground">
                 {comma.number}
               </sup>

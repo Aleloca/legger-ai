@@ -13,6 +13,13 @@
  * trasformerebbe in enfasi/liste, corrompendo il testo. Qui si riconosce
  * SOLO il pattern `[ancora](url)` con url http(s); tutto il resto passa
  * intatto come testo semplice (whitespace compreso).
+ *
+ * Convenzione Normattiva `(( ))` (corpus-analysis A8): il testo tra
+ * doppie parentesi è quello inserito/modificato dal consolidamento.
+ * I marcatori RESTANO nel testo (sono uno standard del dominio legale);
+ * qui vengono solo avvolti in <span> attenuati con tooltip, per dare
+ * l'informazione anche a chi non conosce la convenzione. Il contenuto
+ * testuale resta byte-identico (il copia-incolla riproduce l'originale).
  */
 
 import type { ReactNode } from "react";
@@ -32,11 +39,54 @@ import type { ReactNode } from "react";
  */
 const MD_LINK = /\[([^[\]]*)\]\((https?:\/\/[^\s)]{1,2048})\)/g;
 
+/** I marcatori della novella: `((` apre, `))` chiude (mai annidati nel corpus). */
+const NOVELLA_MARKER = /\(\(|\)\)/g;
+
+/** Tooltip sui glifi `((`/`))` nel testo (Feature: affordance Normattiva). */
+export const NOVELLA_TOOLTIP =
+  "Testo tra (( )) = modificato da provvedimenti successivi — convenzione Normattiva";
+
+/**
+ * Avvolge i soli glifi `((`/`))` di un segmento di testo SEMPLICE in
+ * <span> attenuati con tooltip. Presentazionale puro: i marcatori restano
+ * nel flusso testuale (textContent invariato byte per byte). Le chiavi
+ * derivano dall'offset assoluto nel testo del comma (keyBase).
+ */
+function renderNovellaMarkers(text: string, keyBase: number): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(NOVELLA_MARKER)) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    nodes.push(
+      <span
+        key={`nov-${keyBase + match.index}`}
+        title={NOVELLA_TOOLTIP}
+        className="text-muted-foreground"
+      >
+        {match[0]}
+      </span>,
+    );
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length || nodes.length === 0) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
 /**
  * Spezza il testo sui link markdown e rende le ancore come <a> esterni,
  * stilati come il link "Apri su Normattiva" del pannello (bordeaux,
  * sottolineatura discreta che si accende in hover). Il resto del testo
  * resta nodo-testo semplice, byte per byte.
+ *
+ * Ordine delle trasformazioni (importante): PRIMA i link markdown
+ * sull'intero testo, POI i marcatori `(( ))` sui soli segmenti di testo
+ * semplice rimasti. Così un link dentro un blocco `(( … ))` resta un <a>
+ * (il blocco novellato attraversa i link, non li contiene mai nell'url:
+ * la regex MD_LINK esclude `)` dall'url) e i marcatori intorno al link
+ * vengono comunque attenuati. L'ancora di un link resta intatta: un
+ * marcatore DENTRO l'ancora rimane parte del testo del link (byte-identico
+ * comunque). L'ordine inverso spezzerebbe il pattern `[ancora](url)` a
+ * cavallo di un marcatore, perdendo il link.
  *
  * BONUS futuro (fuori scope): gli URN che puntano ad atti che ABBIAMO
  * indicizzato (es. urn:nir:stato:codice.civile:...) potrebbero aprire la
@@ -47,7 +97,8 @@ export function renderNormText(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   let cursor = 0;
   for (const match of text.matchAll(MD_LINK)) {
-    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    if (match.index > cursor)
+      nodes.push(...renderNovellaMarkers(text.slice(cursor, match.index), cursor));
     nodes.push(
       <a
         key={`link-${match.index}`}
@@ -61,8 +112,61 @@ export function renderNormText(text: string): ReactNode[] {
     );
     cursor = match.index + match[0].length;
   }
-  if (cursor < text.length || nodes.length === 0) nodes.push(text.slice(cursor));
+  if (cursor < text.length || nodes.length === 0)
+    nodes.push(...renderNovellaMarkers(text.slice(cursor), cursor));
   return nodes;
+}
+
+/**
+ * Rileva l'articolo interamente novellato (badge «testo novellato»).
+ *
+ * Criterio strutturale e CONSERVATIVO, sul solo corpo dell'articolo
+ * (i commi, come arrivano da /acts): il primo contenuto non vuoto apre
+ * con `((` — o come comma-marcatore a sé stante (testo trimmato
+ * esattamente `((`, la forma dell'art. 2-septies del codice-privacy),
+ * o come `((` all'inizio assoluto del primo comma — E l'ultimo comma
+ * non vuoto chiude con `))`. Gli articoli novellati solo in parte
+ * (blocco `(( ))` interno) NON contano: lì parlano i marcatori inline.
+ */
+export function isNovellatoArticle(commi: { text: string }[]): boolean {
+  const first = commi.find((c) => c.text.trim() !== "");
+  if (!first) return false;
+  if (first.text.trim() !== "((" && !first.text.startsWith("((")) return false;
+  const last = commi.findLast((c) => c.text.trim() !== "");
+  return last !== undefined && last.text.trim().endsWith("))");
+}
+
+/**
+ * True se da qualche parte nell'atto compare `((`: governa la legenda
+ * della convenzione in fondo al pannello (calcolata una volta per atto).
+ */
+export function actHasNovellaMarkers(act: {
+  articles: { heading: string | null; commi: { text: string }[] }[];
+}): boolean {
+  return act.articles.some(
+    (a) =>
+      (a.heading !== null && a.heading.includes("((")) ||
+      a.commi.some((c) => c.text.includes("((")),
+  );
+}
+
+/**
+ * Numero di comma in testa al testo: dopo whitespace (e un eventuale
+ * marcatore `((` di apertura della novella) un numero — anche nelle
+ * forme ordinali latine «1-bis», «2-septies» — seguito da `.` o `)`.
+ */
+const COMMA_SELF_NUMBER = /^\s*(?:\(\(\s*)?(\d+(?:-[a-zà-ú]+)*)\s*[.)]/iu;
+
+/**
+ * True quando il testo del comma si auto-numera con LO STESSO numero del
+ * campo `comma.number` («1. In attuazione…» con number "1"): in quel caso
+ * il numero in esponente del pannello duplicherebbe e va nascosto.
+ * Confronto normalizzato (minuscole); numeri divergenti («3.» con number
+ * "2") o testo non numerato lasciano l'esponente al suo posto.
+ */
+export function commaSelfNumbered(number: string, text: string): boolean {
+  const match = COMMA_SELF_NUMBER.exec(text);
+  return match !== null && match[1].toLowerCase() === number.trim().toLowerCase();
 }
 
 /**

@@ -61,6 +61,62 @@ const CODICE_CIVILE: ActDetail = {
   ],
 };
 
+/**
+ * Atto con la convenzione Normattiva (( )): l'art. 2-septies rispecchia
+ * la forma reale del codice-privacy (comma-marcatore `((` standalone in
+ * testa, `))` in coda, commi auto-numerati «1. …»); l'art. 3 è novellato
+ * solo in parte; l'art. 4 è pulito.
+ */
+const CODICE_PRIVACY: ActDetail = {
+  act_ref: "codice-privacy",
+  title: "Codice in materia di protezione dei dati personali",
+  act_type: "decreto legislativo",
+  vigenza: "vigente",
+  collection: "codici",
+  articles: [
+    {
+      number: "2-septies",
+      heading: "Misure di garanzia per il trattamento dei dati genetici",
+      path: [],
+      commi: [
+        { number: null, text: "((" },
+        {
+          number: "1",
+          text: "1. In attuazione di quanto previsto dal regolamento, i dati genetici possono essere oggetto di trattamento.",
+        },
+        {
+          number: "1-bis",
+          text: "1-bis. Le misure di garanzia sono adottate con provvedimento del Garante.",
+        },
+        {
+          number: "2",
+          text: "Lo schema di provvedimento è sottoposto a consultazione pubblica.))",
+        },
+      ],
+      anchor: "art-2-septies",
+    },
+    {
+      number: "3",
+      heading: "Principio di minimizzazione",
+      path: [],
+      commi: [
+        {
+          number: "1",
+          text: "3. I sistemi informativi sono configurati riducendo l'utilizzazione di dati personali. ((Le parole sono sostituite dal presente periodo.))",
+        },
+      ],
+      anchor: "art-3",
+    },
+    {
+      number: "4",
+      heading: "Definizioni",
+      path: [],
+      commi: [{ number: "1", text: "Ai fini del presente codice si intende per:" }],
+      anchor: "art-4",
+    },
+  ],
+};
+
 const TARGET: ActTarget = { actRef: "codice-civile", article: "2051", comma: "2" };
 
 beforeEach(() => {
@@ -331,5 +387,85 @@ describe("ActPanel", () => {
         name: "Attuazione dell'articolo 1 della legge 3 agosto 2007, n. 123",
       }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ActPanel — convenzione Normattiva (( ))", () => {
+  const PRIVACY_TARGET: ActTarget = {
+    actRef: "codice-privacy",
+    article: "2-septies",
+    comma: null,
+  };
+
+  async function renderPrivacy() {
+    fetchActMock.mockResolvedValue(CODICE_PRIVACY);
+    return renderPanel(PRIVACY_TARGET);
+  }
+
+  it("badge «testo novellato» sull'articolo interamente racchiuso tra (( ))", async () => {
+    const { container } = await renderPrivacy();
+    const badge = container.querySelector("#art-2-septies h3 span[title]");
+    expect(badge).toHaveTextContent("testo novellato");
+    expect(badge).toHaveAttribute(
+      "title",
+      "Articolo inserito o modificato da provvedimenti successivi rispetto al testo originale (convenzione Normattiva: doppie parentesi)",
+    );
+  });
+
+  it("nessun badge sull'articolo parzialmente novellato né su quello pulito", async () => {
+    const { container } = await renderPrivacy();
+    for (const anchor of ["#art-3", "#art-4"]) {
+      const article = container.querySelector(anchor)!;
+      expect(article.textContent).not.toContain("testo novellato");
+    }
+  });
+
+  it("i marcatori (( )) restano nel testo, attenuati e con tooltip", async () => {
+    const { container } = await renderPrivacy();
+    const article = container.querySelector("#art-3")!;
+    // il testo del comma resta byte-identico, marcatori compresi
+    expect(article.textContent).toContain(
+      "((Le parole sono sostituite dal presente periodo.))",
+    );
+    const markers = article.querySelectorAll(
+      'p span[title="Testo tra (( )) = modificato da provvedimenti successivi — convenzione Normattiva"]',
+    );
+    expect(markers).toHaveLength(2);
+    expect(markers[0].textContent).toBe("((");
+    expect(markers[1].textContent).toBe("))");
+  });
+
+  it("legenda in fondo al pannello quando l'atto contiene marcatori", async () => {
+    await renderPrivacy();
+    expect(
+      screen.getByText(
+        /\(\( \)\) — testo inserito o modificato da provvedimenti successivi \(convenzione Normattiva\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("nessuna legenda per un atto senza marcatori", async () => {
+    await renderPanel(); // CODICE_CIVILE, pulito
+    expect(
+      screen.queryByText(/convenzione Normattiva/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("comma auto-numerato («1. …», «1-bis. …»): niente esponente duplicato", async () => {
+    const { container } = await renderPrivacy();
+    const article = container.querySelector("#art-2-septies")!;
+    expect(article.querySelector('p[data-comma="1"] sup')).toBeNull();
+    expect(article.querySelector('p[data-comma="1-bis"] sup')).toBeNull();
+  });
+
+  it("l'esponente resta quando il testo non si auto-numera o diverge", async () => {
+    const { container } = await renderPrivacy();
+    // testo senza numero in testa («Lo schema…»): esponente visibile
+    const comma2 = container.querySelector('#art-2-septies p[data-comma="2"]')!;
+    expect(comma2.querySelector("sup")).toHaveTextContent("2");
+    // number "1" ma il testo apre con «3.»: divergente, esponente visibile
+    const divergente = container.querySelector('#art-3 p[data-comma="1"]')!;
+    expect(divergente.querySelector("sup")).toHaveTextContent("1");
+    // e il Codice civile pulito conserva i suoi esponenti
   });
 });
