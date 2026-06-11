@@ -520,3 +520,23 @@ zero marker malformati, zero estremi inventati, trappole gestite.
 
 **Decisione embedder produzione**: rinviata alla scelta di budget (4-large massimizza
 la robustezza, 4 costa la metà con pari resa semantica + fast path davanti).
+
+---
+
+# Appendice — Collisioni di filename su filesystem case-insensitive (11 giugno 2026)
+
+Il clone locale su macOS (APFS case-insensitive) mostra 353 file "modificati" mai
+toccati da noi: sono coppie di atti i cui filename sanificati differiscono solo per
+maiuscole/minuscole (es. "Aumento del Fondo di dotazione dellEnte nazionale
+idrocarburi.md" vs "...del fondo di dotazione dellEnte Nazionale Idrocarburi.md").
+Sul filesystem i due path collidono: il checkout del secondo sovrascrive il primo e
+git segnala il primo come modificato. Effetto locale: ~176 atti shadowed (contenuto
+dell'uno indicizzato al posto dell'altro), ~0,1% del corpus, in gran parte abrogati
+storici. Non è un bug della pipeline: l'identità dell'atto deriva dal contenuto (A3),
+quindi nessun merge errato — solo atti mancanti.
+
+**Requisito di deploy (H2): il clone del corpus DEVE stare su filesystem
+case-sensitive** (ext4 sul VPS Linux: ok di default; su macOS servirebbe un volume
+APFS case-sensitive). La `git pull --ff-only` del delta su macOS può rifiutare se
+upstream tocca i file collisi: triage con `git checkout -f` prima del pull, o
+eseguire l'ingestion solo sul VPS.
