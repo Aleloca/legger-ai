@@ -98,6 +98,16 @@ def main() -> None:
         action="store_true",
         help="Skip `git pull --ff-only` and diff against the local corpus HEAD",
     )
+    check_p = ingest_sub.add_parser(
+        "check-upstream",
+        help="Alert (Telegram) when the corpus upstream has no commit for over N days",
+    )
+    check_p.add_argument(
+        "--max-days",
+        type=int,
+        default=7,
+        help="Staleness threshold in days (default 7, per design §8 risk #1)",
+    )
 
     chat = subparsers.add_parser("chat", help="Interactive grounded chat over the indexed corpus")
     chat.add_argument(
@@ -136,6 +146,9 @@ def main() -> None:
             return
         if getattr(args, "ingest_command", None) == "delta":
             _run_ingest_delta(args)
+            return
+        if getattr(args, "ingest_command", None) == "check-upstream":
+            _run_ingest_check_upstream(args)
             return
         ingest.print_help()
         raise SystemExit(1)
@@ -235,16 +248,21 @@ def _run_ingest_delta(args: argparse.Namespace) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    from legger import alerts
     from legger.ingestion.delta import DeltaRefusedError, delta
+    from legger.settings import Settings
 
+    settings = Settings()
     try:
         report = delta(
             embedder_name=args.embedder,
             qdrant_collection=args.qdrant_collection,
             pull=not args.no_pull,
+            settings=settings,
         )
     except DeltaRefusedError as exc:
         print(f"Delta rifiutato: {exc}")
+        alerts.send_alert(f"delta rifiutata: {exc}", settings=settings)
         raise SystemExit(1) from exc
 
     span = f"{(report.commit_from or '?')[:12]}..{(report.commit_to or '?')[:12]}"
@@ -269,8 +287,47 @@ def _run_ingest_delta(args: argparse.Namespace) -> None:
             print(f"  - {entry['file_path']}: {entry['error']}")
         if len(report.errors) > 20:
             print(f"  ... e altri {len(report.errors) - 20}")
+
+    # Alerting (Task D4): a failed run alerts with its note, a completed run
+    # alerts only when files errored (those files will NOT be retried by the
+    # next delta — see legger/ingestion/delta.py); a clean run stays silent.
+    # The upstream staleness check runs inline after every delta (and from
+    # its own `legger ingest check-upstream` cron); send_alert never raises.
+    if report.status == "failed":
+        alerts.send_alert(
+            f"delta fallita: {report.note or 'errore sconosciuto'}", settings=settings
+        )
+    elif report.errors:
+        alerts.send_alert(
+            f"delta completata con {len(report.errors)} errori su {report.files_changed} file",
+            settings=settings,
+        )
+    alerts.check_upstream_freshness(settings.corpus_path, settings=settings)
+
     if report.status == "failed":
         raise SystemExit(1)
+
+
+def _run_ingest_check_upstream(args: argparse.Namespace) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    from legger import alerts
+    from legger.settings import Settings
+
+    settings = Settings()
+    stale = alerts.check_upstream_freshness(
+        settings.corpus_path, max_days=args.max_days, settings=settings
+    )
+    if stale:
+        print(
+            f"Upstream stantio: nessun commit da oltre {args.max_days} giorni "
+            f"in {settings.corpus_path} (alert inviato, dedup 24h)."
+        )
+        raise SystemExit(1)
+    print(f"Upstream OK: ultimo commit entro {args.max_days} giorni in {settings.corpus_path}.")
 
 
 def _run_eval(args: argparse.Namespace) -> None:

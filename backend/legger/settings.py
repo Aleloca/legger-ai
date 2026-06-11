@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     embedder_name: str = "voyage-4-large"
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
+    #: Ingestion alerting (Task D4): Telegram bot token + target chat id.
+    #: Both empty by default — alerts are a logged no-op until configured
+    #: (setup walkthrough in the legger/alerts.py module docstring).
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
     corpus_path: Path = Path("../italia-corpus")
     #: Cross-encoder reranking in the retrieval pipeline (Task E3). Default per
     #: the plan's decision rule (recall@10 delta < 3pp on the measured eval —
