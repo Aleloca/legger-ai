@@ -32,7 +32,9 @@ export default function Home() {
       </header>
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col",
+          // relative: sotto lg il pannello norma è un bottom sheet
+          // ASSOLUTO in quest'area, così il footer-disclaimer resta visibile
+          "relative flex min-h-0 flex-1 flex-col",
           target &&
             "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,45%)] lg:grid-rows-[minmax(0,1fr)]",
         )}

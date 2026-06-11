@@ -26,6 +26,8 @@ export function Chat({
 }) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = React.useState(false);
+  // Suggerimento dall'empty state → riempie il composer (non invia).
+  const [prefill, setPrefill] = React.useState<{ text: string } | null>(null);
   // "sto cercando nel corpus…": dall'invio fino al primo token. Parte
   // ottimisticamente al send (un proxy che bufferizza può consegnare
   // l'evento status insieme ai successivi) e l'evento status la conferma.
@@ -106,8 +108,9 @@ export function Chat({
         messages={messages}
         searching={searching}
         onCitationClick={onCitationClick}
+        onSuggestion={(text) => setPrefill({ text })}
       />
-      <Composer onSend={send} disabled={streaming} />
+      <Composer onSend={send} disabled={streaming} prefill={prefill} />
     </div>
   );
 }

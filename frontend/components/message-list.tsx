@@ -9,8 +9,10 @@
 
 import * as React from "react";
 
+import { SourcesList } from "@/components/sources-list";
 import { renderAssistantText, type CitationRef } from "@/lib/render";
 import type { ChatMessage } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const STICK_THRESHOLD_PX = 96;
 
@@ -18,10 +20,13 @@ export function MessageList({
   messages,
   searching,
   onCitationClick,
+  onSuggestion,
 }: {
   messages: ChatMessage[];
   searching: boolean;
   onCitationClick?: (ref: CitationRef) => void;
+  /** Click su un suggerimento dell'empty state: riempie il composer. */
+  onSuggestion?: (text: string) => void;
 }) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const stickToBottom = React.useRef(true);
@@ -46,16 +51,20 @@ export function MessageList({
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 py-10">
         {messages.length === 0 ? (
-          <EmptyState />
+          <EmptyState onSuggestion={onSuggestion} />
         ) : (
-          messages.map((message, i) => (
-            <MessageRow
-              key={i}
-              message={message}
-              searching={searching && i === messages.length - 1}
-              onCitationClick={onCitationClick}
-            />
-          ))
+          <>
+            {/* h1 della pagina a conversazione attiva (l'empty state ha il suo). */}
+            <h1 className="sr-only">Conversazione sulla normativa</h1>
+            {messages.map((message, i) => (
+              <MessageRow
+                key={i}
+                message={message}
+                searching={searching && i === messages.length - 1}
+                onCitationClick={onCitationClick}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -115,7 +124,9 @@ function AssistantMessage({
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    // aria-live polite: gli screen reader annunciano la risposta mentre
+    // arriva in streaming, senza interrompere la lettura in corso.
+    <div aria-live="polite" className="flex flex-col gap-3">
       {searching && message.content.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
           sto cercando nel corpus
@@ -140,19 +151,22 @@ function AssistantMessage({
       ) : null}
 
       {message.sources && message.sources.length > 0 ? (
-        // Segnaposto: G5 renderizza l'elenco completo delle fonti.
-        <p className="border-t border-border pt-2 text-xs text-muted-foreground">
-          {message.sources.length}{" "}
-          {message.sources.length === 1 ? "fonte consultata" : "fonti consultate"}
-        </p>
+        <SourcesList sources={message.sources} onSourceClick={onCitationClick} />
       ) : null}
     </div>
   );
 }
 
-function EmptyState() {
+/** Domande d'esempio: il click riempie il composer (non invia). */
+const SUGGESTIONS = [
+  "Cosa prevede l'art. 2051 c.c.?",
+  "Obblighi del datore di lavoro nel D.Lgs. 81/2008",
+  "Differenza tra dolo eventuale e colpa cosciente",
+];
+
+function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void }) {
   return (
-    <div className="flex flex-col items-start gap-4 pt-[18vh]">
+    <div className="flex flex-col items-start gap-4 pt-[14vh]">
       <span
         aria-hidden
         className="animate-in fade-in slide-in-from-bottom-2 block h-px w-12 bg-primary/60 duration-700 fill-mode-both"
@@ -164,6 +178,21 @@ function EmptyState() {
         Poni una domanda sulla legislazione italiana: la risposta è fondata
         sui testi vigenti, con citazioni puntuali agli articoli consultati.
       </p>
+      <div className="mt-4 flex w-full max-w-prose flex-col gap-2">
+        {SUGGESTIONS.map((text, i) => (
+          <button
+            key={text}
+            type="button"
+            onClick={onSuggestion && (() => onSuggestion(text))}
+            className={cn(
+              "animate-in fade-in slide-in-from-bottom-2 rounded-md border border-border bg-card px-4 py-3 text-left text-sm leading-relaxed duration-700 fill-mode-both transition-colors hover:border-primary/30 hover:bg-accent",
+              ["delay-300", "delay-[450ms]", "delay-[600ms]"][i],
+            )}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -13,9 +13,16 @@ import { Button } from "@/components/ui/button";
 export function Composer({
   onSend,
   disabled,
+  prefill,
 }: {
   onSend: (text: string) => void;
   disabled: boolean;
+  /**
+   * Testo suggerito (empty state): riempie la textarea senza inviare.
+   * È un oggetto, nuovo ad ogni click, così anche il click ripetuto
+   * sullo stesso suggerimento ri-riempie il campo.
+   */
+  prefill?: { text: string } | null;
 }) {
   const [value, setValue] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -24,6 +31,19 @@ export function Composer({
   React.useEffect(() => {
     if (!disabled) textareaRef.current?.focus();
   }, [disabled]);
+
+  // Adatta lo stato al cambio di prop durante il render (pattern React
+  // «adjusting state when props change»): nuovo prefill → nuova bozza.
+  const [lastPrefill, setLastPrefill] = React.useState(prefill);
+  if (prefill !== lastPrefill) {
+    setLastPrefill(prefill);
+    if (prefill) setValue(prefill.text);
+  }
+
+  // Il focus (side effect DOM) segue il prefill in un effetto.
+  React.useEffect(() => {
+    if (prefill) textareaRef.current?.focus();
+  }, [prefill]);
 
   const submit = () => {
     const text = value.trim();

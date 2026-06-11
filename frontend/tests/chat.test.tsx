@@ -111,20 +111,20 @@ describe("Chat", () => {
     expect(screen.getByText("risposta troncata")).toBeInTheDocument();
   });
 
-  it("sources → conteggio «N fonti consultate»", () => {
+  it("sources → sezione «Fonti consultate (N)», chiusa di default", () => {
     render(<Chat />);
     sendMessage("domanda");
     act(() => {
       lastHandlers().onSources?.([
         {
-          act_ref: "codice.civile",
+          act_ref: "codice-civile",
           article: "2051",
           title: "Danno cagionato da cosa in custodia",
           vigenza: "vigente",
           anchor: "art-2051",
         },
         {
-          act_ref: "codice.civile",
+          act_ref: "codice-civile",
           article: "2043",
           title: "Risarcimento per fatto illecito",
           vigenza: "vigente",
@@ -133,7 +133,75 @@ describe("Chat", () => {
       ]);
       lastHandlers().onDone?.({ stop_reason: "end_turn", truncated: false });
     });
-    expect(screen.getByText("2 fonti consultate")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Fonti consultate (2)" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/art\. 2043/)).not.toBeInTheDocument();
+  });
+
+  it("fonte NON citata: espandi → click → onCitationClick apre la split-view", () => {
+    const onCitationClick = vi.fn();
+    render(<Chat onCitationClick={onCitationClick} />);
+    sendMessage("domanda");
+    act(() => {
+      lastHandlers().onSources?.([
+        {
+          act_ref: "codice-civile",
+          article: "2051",
+          title: "Danno cagionato da cosa in custodia",
+          vigenza: "vigente",
+          anchor: "art-2051",
+        },
+        {
+          // consultata ma mai citata nella risposta
+          act_ref: "codice-civile",
+          article: "2043",
+          title: "Risarcimento per fatto illecito",
+          vigenza: "vigente",
+          anchor: "art-2043",
+        },
+      ]);
+      lastHandlers().onToken?.("Vedi [[codice-civile|art.2051|c.1]].");
+      lastHandlers().onDone?.({ stop_reason: "end_turn", truncated: false });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Fonti consultate (2)" }));
+    fireEvent.click(screen.getByText("Cod. Civ. — art. 2043"));
+    expect(onCitationClick).toHaveBeenCalledWith({
+      actRef: "codice-civile",
+      article: "2043",
+      comma: null,
+    });
+  });
+
+  it("empty state: il click su un suggerimento riempie il composer senza inviare", () => {
+    render(<Chat />);
+    const textarea = screen.getByRole("textbox", {
+      name: "Domanda sulla normativa",
+    }) as HTMLTextAreaElement;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cosa prevede l'art. 2051 c.c.?" }),
+    );
+    expect(textarea.value).toBe("Cosa prevede l'art. 2051 c.c.?");
+    expect(streamChatMock).not.toHaveBeenCalled();
+  });
+
+  it("la regione del messaggio in streaming è aria-live polite", () => {
+    const { container } = render(<Chat />);
+    sendMessage("domanda");
+    act(() => lastHandlers().onToken?.("La risposta"));
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live).toHaveTextContent("La risposta");
+  });
+
+  it("a conversazione attiva resta un h1 (visually hidden)", () => {
+    render(<Chat />);
+    sendMessage("domanda");
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Conversazione sulla normativa",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("done → final: un marker pendente in coda diventa testo visibile", () => {

@@ -245,4 +245,71 @@ describe("ActPanel", () => {
     await renderPanel({ actRef: "rd-1234-1900", article: "2051", comma: null });
     expect(screen.getByText("abrogato")).toBeInTheDocument();
   });
+
+  it("all'apertura il focus entra nel pannello (tabIndex -1)", async () => {
+    await renderPanel();
+    const panel = screen.getByRole("dialog", { name: "Testo della norma" });
+    expect(panel).toHaveAttribute("tabindex", "-1");
+    expect(panel).toHaveFocus();
+  });
+
+  it("alla chiusura il focus torna all'elemento che ha aperto il pannello", async () => {
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    expect(opener).toHaveFocus();
+
+    const { unmount } = await renderPanel();
+    expect(opener).not.toHaveFocus();
+
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it("sotto lg (jsdom) il bottom sheet è un dialog modale", async () => {
+    await renderPanel();
+    const panel = screen.getByRole("dialog", { name: "Testo della norma" });
+    expect(panel).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("articolo citato assente dall'atto → avviso, nessun impulso", async () => {
+    const { container } = await renderPanel({
+      actRef: "codice-civile",
+      article: "9999",
+      comma: null,
+    });
+    expect(
+      screen.getByText(/art\. 9999: articolo non indicato nell'atto/),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".pulse-articolo")).toBeNull();
+  });
+
+  it("titolo amichevole dal registro; estremi grezzi nel sottotitolo", async () => {
+    fetchActMock.mockResolvedValue({
+      ...CODICE_CIVILE,
+      title: "Regio Decreto 16 marzo 1942, n. 262",
+    });
+    await renderPanel();
+    expect(
+      screen.getByRole("heading", { name: "Codice civile" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Regio Decreto 16 marzo 1942, n\. 262/),
+    ).toBeInTheDocument();
+  });
+
+  it("atto fuori registro: il titolo resta quello dell'API", async () => {
+    fetchActMock.mockResolvedValue({
+      ...CODICE_CIVILE,
+      act_ref: "dlgs-81-2008",
+      title: "Attuazione dell'articolo 1 della legge 3 agosto 2007, n. 123",
+    });
+    await renderPanel({ actRef: "dlgs-81-2008", article: "2051", comma: null });
+    expect(
+      screen.getByRole("heading", {
+        name: "Attuazione dell'articolo 1 della legge 3 agosto 2007, n. 123",
+      }),
+    ).toBeInTheDocument();
+  });
 });

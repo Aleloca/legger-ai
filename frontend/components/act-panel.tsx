@@ -40,9 +40,28 @@
 import { X } from "lucide-react";
 import * as React from "react";
 
-import { actRefLabel } from "@/components/citation-chip";
+import { actRefLabel, actRefName } from "@/lib/act-labels";
 import { fetchAct, type ActArticle, type ActDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+/**
+ * Da lg in su il pannello è una colonna affiancata (complementary);
+ * sotto è un bottom sheet modale (dialog). Il ruolo ARIA deve seguire
+ * il breakpoint: matchMedia, con guardia per jsdom (che non lo
+ * implementa: nei test vale il ramo mobile).
+ */
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(min-width: 64rem)");
+    const update = () => setIsDesktop(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isDesktop;
+}
 
 /** Il bersaglio del pannello: l'atto e l'articolo/comma citati. */
 export interface ActTarget {
@@ -73,6 +92,20 @@ export function ActPanel({
   } | null>(null);
   const [attempt, setAttempt] = React.useState(0);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const panelRef = React.useRef<HTMLElement>(null);
+  const isDesktop = useIsDesktop();
+
+  // Gestione del focus: all'apertura il focus entra nel pannello
+  // (tabIndex -1 sul contenitore); alla chiusura (unmount) torna
+  // all'elemento che l'ha aperto — il chip o la riga-fonte cliccata.
+  React.useEffect(() => {
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    panelRef.current?.focus();
+    return () => opener?.focus();
+  }, []);
 
   // Esc chiude il pannello, da qualunque punto della pagina.
   React.useEffect(() => {
@@ -128,7 +161,7 @@ export function ActPanel({
   React.useEffect(() => {
     if (!targetArticle) return;
     const el = scrollRef.current?.querySelector<HTMLElement>(
-      `[id="${targetArticle.anchor}"]`,
+      `#${CSS.escape(targetArticle.anchor)}`,
     );
     if (!el) return;
     // jsdom non implementa scrollIntoView: guardia per i test.
@@ -138,22 +171,34 @@ export function ActPanel({
     el.classList.add("pulse-articolo");
   }, [target, targetArticle]);
 
-  const title = current?.title ?? actRefLabel(target.actRef);
+  // Titolo amichevole: la denominazione corrente del registro quando lo
+  // slug è noto («Codice civile»), altrimenti il titolo dell'API; gli
+  // estremi grezzi scendono nel sottotitolo.
+  const title =
+    actRefName(target.actRef) ?? current?.title ?? actRefLabel(target.actRef);
+  const rawTitle =
+    current?.title && current.title !== title ? current.title : null;
 
   return (
     <>
-      {/* Scrim del bottom sheet (solo mobile): il tap fuori chiude. */}
+      {/* Scrim del bottom sheet (solo mobile): il tap fuori chiude.
+          Assoluto nell'area contenuto (non fixed): header dell'app e
+          footer-disclaimer restano leggibili anche a sheet aperto. */}
       <div
         aria-hidden
         onClick={onClose}
-        className="animate-in fade-in fixed inset-0 z-40 bg-foreground/25 duration-300 lg:hidden"
+        className="animate-in fade-in absolute inset-0 z-40 bg-foreground/25 duration-300 lg:hidden"
       />
       <aside
-        role="complementary"
+        ref={panelRef}
+        tabIndex={-1}
+        role={isDesktop ? "complementary" : "dialog"}
+        aria-modal={isDesktop ? undefined : true}
         aria-label="Testo della norma"
         className={cn(
-          // mobile: bottom sheet
-          "animate-in slide-in-from-bottom fixed inset-x-0 bottom-0 z-50 flex h-[85dvh] flex-col rounded-t-xl border-t border-border bg-background shadow-[0_-8px_32px_rgba(26,24,22,0.18)] duration-300",
+          // mobile: bottom sheet, assoluto nell'area contenuto così il
+          // footer-disclaimer (sotto) resta visibile
+          "animate-in slide-in-from-bottom absolute inset-x-0 bottom-0 z-50 flex h-[85%] flex-col rounded-t-xl border-t border-border bg-background shadow-[0_-8px_32px_color-mix(in_srgb,var(--color-foreground)_18%,transparent)] outline-none duration-300",
           // desktop: colonna del grid, scroll indipendente
           "lg:static lg:z-auto lg:h-auto lg:min-h-0 lg:animate-none lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none",
         )}
@@ -181,7 +226,9 @@ export function ActPanel({
           {current ? (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>
-                {current.act_type} · {actRefLabel(current.act_ref)}
+                {current.act_type} ·{" "}
+                {/* gli estremi grezzi dell'API, retrocessi dal titolo */}
+                {rawTitle ?? actRefLabel(current.act_ref)}
               </span>
               <VigenzaBadge vigenza={current.vigenza} />
               <a
@@ -197,6 +244,12 @@ export function ActPanel({
 
           {current && targetArticle ? (
             <Breadcrumb act={current} article={targetArticle} />
+          ) : null}
+
+          {current && !targetArticle ? (
+            <p className="mt-2 text-xs text-non-verificato">
+              art. {target.article}: articolo non indicato nell&apos;atto
+            </p>
           ) : null}
         </header>
 
@@ -253,7 +306,7 @@ function VigenzaBadge({ vigenza }: { vigenza: string }) {
 /** Titolo dell'atto → partizioni dell'articolo citato → art. N. */
 function Breadcrumb({ act, article }: { act: ActDetail; article: ActArticle }) {
   const crumbs = [
-    act.title ?? actRefLabel(act.act_ref),
+    actRefName(act.act_ref) ?? act.title ?? actRefLabel(act.act_ref),
     ...article.path,
     `art. ${article.number}`,
   ];
