@@ -29,6 +29,13 @@ from legger.retrieval.index import DENSE_VECTOR, SPARSE_VECTOR, make_bm25_model
 if TYPE_CHECKING:
     from fastembed import SparseTextEmbedding
 
+#: REST timeout (seconds) for *search-path* Qdrant clients (eval, chat, API).
+#: Deliberately short: a query that takes longer than this is an outage, not
+#: a wait — only the indexing path gets the generous timeout
+#: (``legger.retrieval.index.INDEXING_CLIENT_TIMEOUT_S``), so retrieval
+#: latency can never silently grow to 120s.
+SEARCH_CLIENT_TIMEOUT_S = 15
+
 _sparse_query_model: SparseTextEmbedding | None = None
 _sparse_query_model_lock = threading.Lock()
 

@@ -237,6 +237,7 @@ def _run_chat(args: argparse.Namespace) -> None:
 
     from legger.chat.generate import MODEL_SONNET, retrieve_for_messages, stream_answer
     from legger.retrieval.embedders import get_embedder
+    from legger.retrieval.search import SEARCH_CLIENT_TIMEOUT_S
     from legger.settings import Settings
 
     settings = Settings()
@@ -245,7 +246,7 @@ def _run_chat(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
     anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
-    qdrant = QdrantClient(url=settings.qdrant_url)
+    qdrant = QdrantClient(url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S)
     embedder = get_embedder(args.embedder)
     messages: list[dict] = []
 

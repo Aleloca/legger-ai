@@ -39,7 +39,7 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 from legger.retrieval.embedders import get_embedder
-from legger.retrieval.search import SearchHit, hybrid_search
+from legger.retrieval.search import SEARCH_CLIENT_TIMEOUT_S, SearchHit, hybrid_search
 from legger.settings import Settings
 
 #: Query kinds in display order (matches queries.yaml).
@@ -340,7 +340,9 @@ def run_eval(
     """
     settings = settings or Settings()
     embedder = get_embedder(embedder_name)
-    client = QdrantClient(url=settings.qdrant_url)
+    # Short, explicit search-path timeout: slow retrieval must FAIL the eval,
+    # not hide behind the indexing path's generous 120s timeout.
+    client = QdrantClient(url=settings.qdrant_url, timeout=SEARCH_CLIENT_TIMEOUT_S)
     queries = load_queries(queries_path)
 
     def search(query: str) -> list[SearchHit]:

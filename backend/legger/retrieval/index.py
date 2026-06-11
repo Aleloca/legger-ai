@@ -34,6 +34,10 @@ Failure contract
   VoyageEmbedder caller contract): the lot is retried once, then the run
   aborts cleanly — already-upserted lots are durable and a re-run skips them
   (lot-level resume), re-embedding only what is missing.
+- A timed-out ``wait=true`` upsert (HNSW indexing pressure on a large
+  collection) is retried twice with 5s/20s backoff — idempotent point ids
+  make a retry safe even if the timed-out request landed — then the run
+  aborts cleanly with the same resume story.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from qdrant_client import QdrantClient, models
+from qdrant_client.http.exceptions import ResponseHandlingException
 
 from legger.corpus.chunker import Chunk, chunk_act
 from legger.corpus.parser import parse_act
@@ -69,6 +74,17 @@ KEYWORD_INDEXES = ("vigenza", "act_type", "act_ref", "article")
 #: Chunks per embed+upsert lot. Caps the blast radius of a failed embed call
 #: and keeps upsert request bodies small (~256 * (1024 floats + payload)).
 LOT_SIZE = 256
+#: REST timeout (seconds) for the *indexing* Qdrant client. The qdrant-client
+#: default (5s) is too tight for ``wait=true`` upserts on a large collection:
+#: HNSW indexing pressure spikes made two full-corpus bootstraps die with
+#: ``ResponseHandlingException: timed out`` around 400k points. 120s covers
+#: the observed indexing pauses. Search/eval paths construct their OWN client
+#: with a short explicit timeout — retrieval latency must not silently grow
+#: to 120s (see ``legger.retrieval.search.SEARCH_CLIENT_TIMEOUT_S``).
+INDEXING_CLIENT_TIMEOUT_S = 120
+#: Backoff (seconds) before each upsert retry; module-level so tests can
+#: zero it out.
+UPSERT_RETRY_BACKOFF_S: tuple[float, ...] = (5.0, 20.0)
 
 
 def embedder_slug(name: str) -> str:
@@ -228,6 +244,53 @@ def _embed_lot_with_retry(embedder: Embedder, texts: list[str], lot_no: int) -> 
         ) from exc
 
 
+def _upsert_lot_with_retry(
+    client: QdrantClient,
+    collection_name: str,
+    points: list[models.PointStruct],
+    lot_no: int,
+) -> None:
+    """Upsert one lot, retrying timeouts twice (backoff 5s/20s); then abort.
+
+    Mirrors :func:`_embed_lot_with_retry`. Under HNSW indexing pressure a
+    large collection occasionally stalls a ``wait=true`` upsert past the REST
+    timeout (``ResponseHandlingException: timed out``); a short backoff lets
+    the indexer catch up. Point ids are deterministic, so a retried upsert is
+    idempotent even if the timed-out request actually landed.
+
+    ``wait=True`` is deliberate and must stay: the bootstrap durability
+    contract (``ingestion_progress``/``acts`` rows written via ``on_durable``
+    only after the chunks are durable in Qdrant) depends on the upsert ack
+    meaning "persisted", not "queued". ``wait=False`` plus a final flush
+    would let a crash record progress rows for chunks Qdrant never applied.
+    """
+    last_exc: Exception | None = None
+    for attempt, backoff_s in enumerate((0.0, *UPSERT_RETRY_BACKOFF_S)):
+        if backoff_s:
+            time.sleep(backoff_s)
+        try:
+            client.upsert(collection_name=collection_name, points=points, wait=True)
+            return
+        except (ResponseHandlingException, TimeoutError) as exc:
+            last_exc = exc
+            if attempt < len(UPSERT_RETRY_BACKOFF_S):
+                logger.warning(
+                    "upsert of lot %d timed out (%s: %s); retry %d/%d in %.0fs",
+                    lot_no,
+                    type(exc).__name__,
+                    exc,
+                    attempt + 1,
+                    len(UPSERT_RETRY_BACKOFF_S),
+                    UPSERT_RETRY_BACKOFF_S[attempt],
+                )
+    raise RuntimeError(
+        f"Upsert of lot {lot_no} failed {1 + len(UPSERT_RETRY_BACKOFF_S)} times "
+        f"({type(last_exc).__name__}: {last_exc}). Aborting; already-upserted "
+        "lots are durable and point ids are deterministic, so simply re-run "
+        "the same command to resume."
+    ) from last_exc
+
+
 def _lot_already_indexed(client: QdrantClient, collection_name: str, ids: list[str]) -> bool:
     """True iff *all* ``ids`` already exist as points in the collection.
 
@@ -288,7 +351,8 @@ def index_chunks(
             )
             for pid, chunk, dense_vec, sparse_vec in zip(ids, lot, dense, sparse, strict=True)
         ]
-        client.upsert(collection_name=collection_name, points=points, wait=True)
+        # wait=True is load-bearing: see _upsert_lot_with_retry's docstring.
+        _upsert_lot_with_retry(client, collection_name, points, lot_no)
         done += len(lot)
         rate = done / max(time.monotonic() - started, 1e-9)
         logger.info(
@@ -323,7 +387,7 @@ def index_collection(
         len(report.file_errors),
     )
 
-    client = QdrantClient(url=settings.qdrant_url)
+    client = QdrantClient(url=settings.qdrant_url, timeout=INDEXING_CLIENT_TIMEOUT_S)
     ensure_collection(client, collection_name, embedder.dim, recreate=recreate)
     report.chunks_indexed, report.chunks_skipped = index_chunks(
         client,

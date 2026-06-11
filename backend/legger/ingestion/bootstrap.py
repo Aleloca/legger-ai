@@ -89,6 +89,7 @@ from legger.db import (
     upsert_progress,
 )
 from legger.retrieval.index import (
+    INDEXING_CLIENT_TIMEOUT_S,
     LOT_SIZE,
     ensure_collection,
     index_chunks,
@@ -397,7 +398,11 @@ def bootstrap(
     engine = engine or get_engine(settings)
     from qdrant_client import QdrantClient
 
-    client = qdrant_client or QdrantClient(url=settings.qdrant_url)
+    # Generous REST timeout: wait=true upserts stall under HNSW indexing
+    # pressure on a large collection (see INDEXING_CLIENT_TIMEOUT_S).
+    client = qdrant_client or QdrantClient(
+        url=settings.qdrant_url, timeout=INDEXING_CLIENT_TIMEOUT_S
+    )
     from legger.retrieval.embedders import get_embedder
 
     embedder = embedder or get_embedder(embedder_name)

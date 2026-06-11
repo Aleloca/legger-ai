@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pytest
 from qdrant_client import models
+from qdrant_client.http.exceptions import ResponseHandlingException
 
 from legger.corpus.chunker import Chunk
 from legger.retrieval.index import (
@@ -46,11 +47,17 @@ def make_chunk(i: int = 0) -> Chunk:
 
 
 class FakeQdrant:
-    """Records calls; configurable existence and pre-existing point ids."""
+    """Records calls; configurable existence, pre-existing ids, upsert timeouts."""
 
-    def __init__(self, exists: bool = False, existing_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        exists: bool = False,
+        existing_ids: set[str] | None = None,
+        upsert_timeouts: int = 0,
+    ) -> None:
         self._exists = exists
         self.existing_ids = existing_ids or set()
+        self.upsert_timeouts = upsert_timeouts
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def collection_exists(self, name: str) -> bool:
@@ -73,6 +80,9 @@ class FakeQdrant:
 
     def upsert(self, **kwargs: Any) -> None:
         self.calls.append(("upsert", kwargs))
+        if self.upsert_timeouts > 0:
+            self.upsert_timeouts -= 1
+            raise ResponseHandlingException("timed out")
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [kwargs for called, kwargs in self.calls if called == name]
@@ -224,6 +234,43 @@ def test_index_chunks_aborts_after_second_failure() -> None:
     with pytest.raises(RuntimeError, match="re-run"):
         index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
     assert client.named("upsert") == []  # nothing upserted for the failed lot
+
+
+# --- upsert timeout retry ---
+
+
+@pytest.fixture
+def no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the 2-retry shape but zero the 5s/20s sleeps (tests stay fast)."""
+    import legger.retrieval.index as index_module
+
+    monkeypatch.setattr(index_module, "UPSERT_RETRY_BACKOFF_S", (0.0, 0.0))
+
+
+def test_index_chunks_retries_timed_out_upsert(no_backoff: None) -> None:
+    client = FakeQdrant(upsert_timeouts=1)  # first upsert times out, retry lands
+    chunks = [make_chunk(i) for i in range(2)]
+    embedder = FakeEmbedder()
+
+    count, skipped = index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+
+    assert count == 2
+    assert skipped == 0
+    upserts = client.named("upsert")
+    assert len(upserts) == 2  # original attempt + exactly one retry
+    assert upserts[0]["points"] == upserts[1]["points"]  # idempotent replay
+    assert all(up["wait"] is True for up in upserts)
+    assert len(embedder.calls) == 1  # the retry does NOT re-pay embedding
+
+
+def test_index_chunks_aborts_after_upsert_timeout_retries_exhausted(no_backoff: None) -> None:
+    client = FakeQdrant(upsert_timeouts=99)  # every attempt times out
+    chunks = [make_chunk(i) for i in range(2)]
+    embedder = FakeEmbedder()
+
+    with pytest.raises(RuntimeError, match="re-run the same command to resume"):
+        index_chunks(client, "norme_test", chunks, embedder, FakeSparse(), lot_size=2)  # type: ignore[arg-type]
+    assert len(client.named("upsert")) == 3  # original attempt + 2 retries
 
 
 # --- lot-level resume ---
