@@ -1,0 +1,2172 @@
+{
+  "collection": "norme_voyage4large",
+  "embedder": "voyage-4-large",
+  "k": 10,
+  "vigenza": "vigente",
+  "rerank": true,
+  "rerank_candidates": 50,
+  "timestamp": "2026-06-11T00:38:58Z",
+  "queries": 30,
+  "recall_at_5": 0.8333333333333334,
+  "recall_at_10": 0.9666666666666667,
+  "mrr": 0.7481349206349207,
+  "avg_latency_s": 132.7679,
+  "by_kind": {
+    "explicit": {
+      "queries": 10,
+      "recall_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "mrr": 0.9333333333333333
+    },
+    "natural": {
+      "queries": 12,
+      "recall_at_5": 0.8333333333333334,
+      "recall_at_10": 0.9166666666666666,
+      "mrr": 0.7465277777777778
+    },
+    "lay": {
+      "queries": 5,
+      "recall_at_5": 0.6,
+      "recall_at_10": 1.0,
+      "mrr": 0.5019047619047619
+    },
+    "trap": {
+      "queries": 3,
+      "recall_at_5": 0.6666666666666666,
+      "recall_at_10": 1.0,
+      "mrr": 0.5476190476190476
+    }
+  },
+  "results": [
+    {
+      "id": "q01",
+      "kind": "explicit",
+      "query": "art. 2051 c.c.",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "2051",
+      "rank": 1,
+      "latency_s": 298.9568,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "2051",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.974670265896971
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2050",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.91809722775903
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "2051",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.8997951970475894
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "2060",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.6875994218626998
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "2269",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.06987406562061796
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "1",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.03202295752138355
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "201",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.02116058053416553
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "1284",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.015523784541655799
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "205",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.015130373024956147
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "1651",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.013616146783061129
+        }
+      ]
+    },
+    {
+      "id": "q02",
+      "kind": "explicit",
+      "query": "articolo 52 del codice penale",
+      "expected_act_ref": "codice-penale",
+      "expected_article": "52",
+      "rank": 1,
+      "latency_s": 101.0142,
+      "top": [
+        {
+          "act_ref": "codice-penale",
+          "article": "52",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9976855554861134
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "55",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9826392117086791
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "552",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.971260302957596
+        },
+        {
+          "act_ref": "dlgs-271-1989",
+          "article": "52",
+          "header": "Decreto Legislativo 271/1989 — Norme di attuazione, di coordinamento e transitorie del codice di procedura penale.",
+          "score": 0.963280145058645
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2044",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9315111362300865
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "521",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8593855804581185
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "522",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8512636544026141
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "456",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.791858247268835
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "455",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.7900285971684106
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "523",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.7823804459074528
+        }
+      ]
+    },
+    {
+      "id": "q03",
+      "kind": "explicit",
+      "query": "art. 700 c.p.c.",
+      "expected_act_ref": "codice-procedura-civile",
+      "expected_article": "700",
+      "rank": 1,
+      "latency_s": 115.8975,
+      "top": [
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "700",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.9833910505023281
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "700",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9819748168672262
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "700",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9728461969619288
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "700",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9503750523350982
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "700",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.9455902563934254
+        },
+        {
+          "act_ref": "codice-proprieta-industriale",
+          "article": "132",
+          "header": "Codice 30/2005 — Codice della proprieta' industriale, a norma dell'articolo 15 della legge 12 dicembre 2002, n. 273.",
+          "score": 0.8152853648439372
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "715",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.7948105691723683
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "700",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.7874201935974057
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "2198-bis",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.3360643631918817
+        },
+        {
+          "act_ref": "rd-1023-1941",
+          "article": "37",
+          "header": "Regio Decreto 1023/1941 — Disposizioni di coordinamento, transitorie e di attuazione dei Codici penali militari di pace e di guerra.",
+          "score": 0.2899309783827946
+        }
+      ]
+    },
+    {
+      "id": "q04",
+      "kind": "explicit",
+      "query": "art. 274 c.p.p.",
+      "expected_act_ref": "dpr-447-1988",
+      "expected_article": "274",
+      "rank": 3,
+      "latency_s": 123.407,
+      "top": [
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "274",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.9877651402062253
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "274",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9758914525890612
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "274",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.965243889036078
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "274",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9550488522648359
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "275",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9530584037484755
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "274",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.9380544755040886
+        },
+        {
+          "act_ref": "dpr-156-1973",
+          "article": "274",
+          "header": "D.P.R. 156/1973 — Approvazione del testo unico delle disposizioni legislative in materia postale, di bancoposta e di telecomunicazioni.",
+          "score": 0.8866835119826333
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "274-bis",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.8613400559910335
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "301",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.828059189249342
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "274",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.8206732191912461
+        }
+      ]
+    },
+    {
+      "id": "q05",
+      "kind": "explicit",
+      "query": "articolo 186 del codice della strada",
+      "expected_act_ref": "dlgs-285-1992",
+      "expected_article": "186",
+      "rank": 1,
+      "latency_s": 136.4909,
+      "top": [
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9957133167021073
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186-bis",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9891873670265362
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.988673614093541
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9877527789062382
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9824473247550253
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "186",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.9793186794271979
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9413230531514816
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "214-ter",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.9307747361954588
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "589-bis",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8973462252452084
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "590-bis",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8623777892051923
+        }
+      ]
+    },
+    {
+      "id": "q06",
+      "kind": "explicit",
+      "query": "art. 1453 del codice civile",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "1453",
+      "rank": 1,
+      "latency_s": 79.3293,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "1453",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9971161602200083
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "1453",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.8029876139595226
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "703",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.6504229080683807
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "1653",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.23752487050792426
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "453",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.23378386241262183
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "543",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.15760544390792977
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "7",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.14717293431853987
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "1",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.13416919017082257
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "455",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.1166898270201127
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "127",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.11578261197236461
+        }
+      ]
+    },
+    {
+      "id": "q07",
+      "kind": "explicit",
+      "query": "art. 33 del codice del consumo",
+      "expected_act_ref": "codice-consumo",
+      "expected_article": "33",
+      "rank": 1,
+      "latency_s": 166.9487,
+      "top": [
+        {
+          "act_ref": "codice-consumo",
+          "article": "33",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9925503862506738
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "33",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9916805833580652
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "33",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9876318002298298
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "36",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.7919906432476272
+        },
+        {
+          "act_ref": "dlgs-36-2023",
+          "article": "33",
+          "header": "Decreto Legislativo 36/2023 — Codice dei contratti pubblici in attuazione dell'articolo 1 della legge 21 giugno 2022, n. 78, recante delega al…",
+          "score": 0.713139424940439
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "687",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.47044447772513326
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "37-bis",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.40190118841591094
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "27",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.20983469247921607
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "45",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.19631167087554308
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "2",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.19511952395884694
+        }
+      ]
+    },
+    {
+      "id": "q08",
+      "kind": "explicit",
+      "query": "articolo 167 del codice privacy",
+      "expected_act_ref": "codice-privacy",
+      "expected_article": "167",
+      "rank": 1,
+      "latency_s": 106.8601,
+      "top": [
+        {
+          "act_ref": "codice-privacy",
+          "article": "167",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9697892061333097
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "167-bis",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.953741033912382
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "167-ter",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9484364005915054
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "132",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.5612902644672563
+        },
+        {
+          "act_ref": "rd-318-1942",
+          "article": "167",
+          "header": "Regio Decreto 318/1942 — Disposizioni per l'attuazione del Codice civile e disposizioni transitorie.",
+          "score": 0.5134095544210883
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "167",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.40108144694900055
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "165",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.3521156091178553
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "167",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.32345940067526313
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "156",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.3217154742892005
+        },
+        {
+          "act_ref": "dlgs-271-1989",
+          "article": "167",
+          "header": "Decreto Legislativo 271/1989 — Norme di attuazione, di coordinamento e transitorie del codice di procedura penale.",
+          "score": 0.2659409748834915
+        }
+      ]
+    },
+    {
+      "id": "q09",
+      "kind": "explicit",
+      "query": "art. 256 del d.lgs. 152/2006",
+      "expected_act_ref": "dlgs-152-2006",
+      "expected_article": "256",
+      "rank": 1,
+      "latency_s": 131.8487,
+      "top": [
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "256",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9961787813593419
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "256",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9944231140555355
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "256-bis",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9874847797596176
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "259-bis",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9655133777793434
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "265",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9120267394513137
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "259",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9094200813463666
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "266",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9086251816849655
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "258",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9058665882238822
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "257",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9043874662669843
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "318-octies",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.9002088072428074
+        }
+      ]
+    },
+    {
+      "id": "q10",
+      "kind": "explicit",
+      "query": "art. 20 del codice dell'amministrazione digitale",
+      "expected_act_ref": "codice-amministrazione-digitale",
+      "expected_article": "20",
+      "rank": 1,
+      "latency_s": 151.438,
+      "top": [
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "20",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.9778200589992047
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "22",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.8994372040972334
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "2",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.805061375146614
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "65",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.736789429334325
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "21",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.7203745579282907
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "1",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.5551139729663567
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "17",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.44444745498739846
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "17",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.42631221189038343
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "7",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.40339659662471833
+        },
+        {
+          "act_ref": "codice-amministrazione-digitale",
+          "article": "64",
+          "header": "Codice 82/2005 — Codice dell'amministrazione digitale.",
+          "score": 0.39362465587450945
+        }
+      ]
+    },
+    {
+      "id": "q11",
+      "kind": "natural",
+      "query": "entro quanto tempo si prescrive la richiesta di risarcimento per un fatto illecito?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "2947",
+      "rank": 1,
+      "latency_s": 109.5624,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "2947",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9985519832551493
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "125",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.8804292123842817
+        },
+        {
+          "act_ref": "dlgs-104-2010",
+          "article": "30",
+          "header": "Decreto Legislativo 104/2010 — Attuazione dell'articolo 44 della legge 18 giugno 2009, n. 69, recante delega al governo per il riordino del processo…",
+          "score": 0.7796158545553348
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2952",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.7359098512483191
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "487",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.515104103048705
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2043",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.4853816671368301
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "46",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.4753725561866951
+        },
+        {
+          "act_ref": "codice-assicurazioni-private",
+          "article": "148",
+          "header": "Codice 209/2005 — Codice delle assicurazioni private.",
+          "score": 0.41293525208951753
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "51-quater",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.3354611224390799
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "43",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.2823750099859598
+        }
+      ]
+    },
+    {
+      "id": "q12",
+      "kind": "natural",
+      "query": "il creditore teme che il debitore disperda i propri beni prima della sentenza: quale misura cautelare puo' chiedere?",
+      "expected_act_ref": "codice-procedura-civile",
+      "expected_article": "671",
+      "rank": 1,
+      "latency_s": 124.5573,
+      "top": [
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "671",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.9186009452303127
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "54",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9048705230561218
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2905",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.723885142692747
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "18",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.5919648164890934
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "316",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.5441868450225708
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2813",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.5101072056608712
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "473-bis",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.5032867076047532
+        },
+        {
+          "act_ref": "dlgs-104-2010",
+          "article": "55",
+          "header": "Decreto Legislativo 104/2010 — Attuazione dell'articolo 44 della legge 18 giugno 2009, n. 69, recante delega al governo per il riordino del processo…",
+          "score": 0.49246760729957917
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "189",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.31609969424096496
+        },
+        {
+          "act_ref": "dlgs-159-2011",
+          "article": "22",
+          "header": "Decreto Legislativo 159/2011 — Codice delle leggi antimafia e delle misure di prevenzione, nonche' nuove disposizioni in materia di documentazione…",
+          "score": 0.3100377692166869
+        }
+      ]
+    },
+    {
+      "id": "q13",
+      "kind": "natural",
+      "query": "fino a quale limite di pena e' ammesso il patteggiamento?",
+      "expected_act_ref": "dpr-447-1988",
+      "expected_article": "444",
+      "rank": 8,
+      "latency_s": 133.723,
+      "top": [
+        {
+          "act_ref": "codice-penale",
+          "article": "176",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.09385985577955812
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "459",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.05722390986218061
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "78",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.052312093543468184
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "442",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.04307904258628891
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "164",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.04045438546813094
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "79",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.033994930106161385
+        },
+        {
+          "act_ref": "dlgs-152-2006",
+          "article": "137",
+          "header": "Decreto Legislativo 152/2006 — Norme in materia ambientale.",
+          "score": 0.032324690526302303
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "444",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.03174558250809206
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "163",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.029788842050598837
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "157",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.025534910807228275
+        }
+      ]
+    },
+    {
+      "id": "q14",
+      "kind": "natural",
+      "query": "chi commette un reato per salvarsi da un pericolo grave e inevitabile e' punibile?",
+      "expected_act_ref": "codice-penale",
+      "expected_article": "54",
+      "rank": 1,
+      "latency_s": 95.3586,
+      "top": [
+        {
+          "act_ref": "codice-penale",
+          "article": "54",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9958825320943513
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "384",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9934767558995549
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2045",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.8912714446810188
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "55",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8443063765172252
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "49",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8391163998475835
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "52",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.7806833146480247
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "46",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.6150064349284807
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "450",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.5649357116710365
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "45",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.43399340488557075
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "50",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.35977742703362897
+        }
+      ]
+    },
+    {
+      "id": "q15",
+      "kind": "natural",
+      "query": "il giudice puo' diminuire la pena valutando circostanze a favore dell'imputato diverse da quelle previste espressamente?",
+      "expected_act_ref": "codice-penale",
+      "expected_article": "62-bis",
+      "rank": 1,
+      "latency_s": 115.4273,
+      "top": [
+        {
+          "act_ref": "codice-penale",
+          "article": "62-bis",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9962879641509856
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "63",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9746071550826589
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "597",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9614611501138806
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "442",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9605377379420283
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "114",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.953040299566069
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "464",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9184802261738586
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "604",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.9112254273424412
+        },
+        {
+          "act_ref": "dlgs-271-1989",
+          "article": "257",
+          "header": "Decreto Legislativo 271/1989 — Norme di attuazione, di coordinamento e transitorie del codice di procedura penale.",
+          "score": 0.9082667797120121
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "69",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8938719924158606
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "590-quater",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.892841225758701
+        }
+      ]
+    },
+    {
+      "id": "q16",
+      "kind": "natural",
+      "query": "entro quanti giorni il consumatore puo' recedere da un acquisto concluso fuori dai locali commerciali?",
+      "expected_act_ref": "codice-consumo",
+      "expected_article": "52",
+      "rank": 1,
+      "latency_s": 165.4564,
+      "top": [
+        {
+          "act_ref": "codice-consumo",
+          "article": "52",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9986605116220322
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "57",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.987375668883881
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "67-duodecies",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9334416398227955
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "2",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.9229574894867033
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "2",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.9157954066819244
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "59-octies",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.9102137764435981
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "2",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.9001293189418106
+        },
+        {
+          "act_ref": "dlgs-79-2011",
+          "article": "41",
+          "header": "Decreto Legislativo 79/2011 — Codice della normativa statale in tema di ordinamento e mercato del turismo, a norma dell'articolo 14 della legge 28…",
+          "score": 0.8842113589723146
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "49",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.8597720668313225
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "59",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.8556284600974994
+        }
+      ]
+    },
+    {
+      "id": "q17",
+      "kind": "natural",
+      "query": "quali poteri e funzioni ha il Garante per la protezione dei dati personali?",
+      "expected_act_ref": "codice-privacy",
+      "expected_article": "154",
+      "rank": 3,
+      "latency_s": 156.8769,
+      "top": [
+        {
+          "act_ref": "codice-privacy",
+          "article": "154-bis",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9973889150788505
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "153",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9871707744910266
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "154",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9861833927138807
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "154-ter",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.97894203056935
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "154",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9770585170080256
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "154",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.974914404398052
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "156",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9687189468216583
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "1",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9475692631076711
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "158",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9399162985901943
+        },
+        {
+          "act_ref": "codice-privacy",
+          "article": "157",
+          "header": "Codice 196/2003 — Codice in materia di protezione dei dati personali ((, recante disposizioni per l'adeguamento dell'ordinamento…",
+          "score": 0.9392881360041837
+        }
+      ]
+    },
+    {
+      "id": "q18",
+      "kind": "natural",
+      "query": "cosa rischia chi si mette al volante dopo aver fatto uso di droghe?",
+      "expected_act_ref": "dlgs-285-1992",
+      "expected_article": "187",
+      "rank": 1,
+      "latency_s": 172.2914,
+      "top": [
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.38568350244171445
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.1797771873545788
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.1622822090359521
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.12508673769859105
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.08928474698573259
+        },
+        {
+          "act_ref": "codice-nautica-diporto",
+          "article": "53-quater",
+          "header": "Codice 171/2005 — Codice della nautica da diporto ed attuazione della direttiva 2003/44/CE, a norma dell'articolo 6 della legge 8 luglio…",
+          "score": 0.06223721064931652
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "590-bis",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.04428552093161993
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "187",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.037511511785928695
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "186-bis",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.03118999164624884
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "120",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.024285270425361265
+        }
+      ]
+    },
+    {
+      "id": "q19",
+      "kind": "natural",
+      "query": "un imprenditore in squilibrio patrimoniale vuole farsi affiancare da un esperto indipendente per trattare con i creditori: quale strumento prevede il codice della crisi?",
+      "expected_act_ref": "codice-crisi-impresa",
+      "expected_article": "12",
+      "rank": 2,
+      "latency_s": 162.5579,
+      "top": [
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "25-quater",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9970500053567858
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "12",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.987400157450853
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "16",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9806559996685228
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "23",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9765150555798853
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "2",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9679083294778358
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "56",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9490679051129585
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "62",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9477817818087907
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "17",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9453648011733443
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "25",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9394355533606984
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "18",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.9278639251481897
+        }
+      ]
+    },
+    {
+      "id": "q20",
+      "kind": "natural",
+      "query": "quali acquisti compiuti dai coniugi durante il matrimonio rientrano nella comunione legale?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "177",
+      "rank": 1,
+      "latency_s": 50.5493,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "177",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9946755607567819
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "179",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9348474515567742
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "211",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.5945934416860734
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "189",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.46753723693208005
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "210",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.46396608076204543
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "188",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.456381007028706
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "186",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.4478975607971904
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "178",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.38793011748223427
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "180",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.31833351883346245
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2647",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.26143255860476716
+        }
+      ]
+    },
+    {
+      "id": "q21",
+      "kind": "natural",
+      "query": "il datore di lavoro risponde dei danni causati a terzi dal proprio dipendente durante il lavoro?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "2049",
+      "rank": null,
+      "latency_s": 103.987,
+      "top": [
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "366",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.252003336460536
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "1846",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.23253357895623028
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2127",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.18393627316763483
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "1846",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.17553441612345078
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2751-bis",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.17431376285454167
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "366",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.1569952495718253
+        },
+        {
+          "act_ref": "codice-assicurazioni-private",
+          "article": "137",
+          "header": "Codice 209/2005 — Codice delle assicurazioni private.",
+          "score": 0.0975651415859377
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "1011",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.0800528331644199
+        },
+        {
+          "act_ref": "codice-proprieta-industriale",
+          "article": "64",
+          "header": "Codice 30/2005 — Codice della proprieta' industriale, a norma dell'articolo 15 della legge 12 dicembre 2002, n. 273.",
+          "score": 0.065764440930305
+        },
+        {
+          "act_ref": "codice-crisi-impresa",
+          "article": "4",
+          "header": "Codice 14/2019 — Codice della crisi d'impresa e dell'insolvenza in attuazione della legge 19 ottobre 2017, n. 155.",
+          "score": 0.06044760698922428
+        }
+      ]
+    },
+    {
+      "id": "q22",
+      "kind": "natural",
+      "query": "entro quale termine si impugna una cartella di pagamento davanti al giudice tributario?",
+      "expected_act_ref": "dlgs-546-1992",
+      "expected_article": "21",
+      "rank": 1,
+      "latency_s": 129.905,
+      "top": [
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "21",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.8892596441784414
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "19",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.8691771119621986
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "51",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.7589825391083803
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "75",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.4980901665734782
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "2",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.43380998558006084
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "72",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.3681406990613227
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "47",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.3269359715313952
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "616",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.3249627691943746
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "22",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.2566351783842315
+        },
+        {
+          "act_ref": "dlgs-546-1992",
+          "article": "64",
+          "header": "Decreto Legislativo 546/1992 — Disposizioni sul processo tributario in attuazione della delega al Governo contenuta nell'art. 30 della legge 30…",
+          "score": 0.22188971558207063
+        }
+      ]
+    },
+    {
+      "id": "q23",
+      "kind": "lay",
+      "query": "il mio vicino vuole costruire vicino al confine del mio terreno, a che distanza deve stare?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "873",
+      "rank": 7,
+      "latency_s": 90.5657,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "875",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.8281268487779259
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "907",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.8057861815929372
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "877",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.633071664142812
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "889",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.6130948430249537
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "891",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.5598161095947262
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "26",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.46640770989919367
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "873",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.44260162455852076
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "892",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.42623617731715213
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "890",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.3679361611986119
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "905",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.16200852829197093
+        }
+      ]
+    },
+    {
+      "id": "q24",
+      "kind": "lay",
+      "query": "il cane del vicino mi ha morso, chi mi paga i danni?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "2052",
+      "rank": 1,
+      "latency_s": 65.6272,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "2052",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.06470402735579504
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "1917",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.05049034492437809
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2047",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.03949865308674878
+        },
+        {
+          "act_ref": "codice-assicurazioni-private",
+          "article": "304",
+          "header": "Codice 209/2005 — Codice delle assicurazioni private.",
+          "score": 0.033256367855406185
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2049",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.029014732326024067
+        },
+        {
+          "act_ref": "codice-assicurazioni-private",
+          "article": "292",
+          "header": "Codice 209/2005 — Codice delle assicurazioni private.",
+          "score": 0.024034295985997902
+        },
+        {
+          "act_ref": "codice-assicurazioni-private",
+          "article": "302",
+          "header": "Codice 209/2005 — Codice delle assicurazioni private.",
+          "score": 0.01707902485659089
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2044",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.016719709056818945
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "925",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.01331591624399223
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "2043",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.010472910080021899
+        }
+      ]
+    },
+    {
+      "id": "q25",
+      "kind": "lay",
+      "query": "ho comprato un telefono e si e' rotto dopo due mesi: me lo devono riparare o sostituire gratis?",
+      "expected_act_ref": "codice-consumo",
+      "expected_article": "135-bis",
+      "rank": 6,
+      "latency_s": 128.5806,
+      "top": [
+        {
+          "act_ref": "codice-consumo",
+          "article": "45",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.2501074117783278
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "135-ter",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.16825878531386868
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "1512",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.062273260243170675
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "135-quinquies",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.04573461276352803
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "48",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.04252755181161298
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "135-bis",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.04033763011686526
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "128",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.017432958563323036
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "128",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.014121358303641812
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "49",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.012452696637414721
+        },
+        {
+          "act_ref": "codice-consumo",
+          "article": "51",
+          "header": "Codice 206/2005 — Codice del consumo, a norma dell'articolo 7 della legge 29 luglio 2003, n. 229.",
+          "score": 0.006687717415226546
+        }
+      ]
+    },
+    {
+      "id": "q26",
+      "kind": "lay",
+      "query": "sono passato col semaforo rosso, cosa rischio?",
+      "expected_act_ref": "dlgs-285-1992",
+      "expected_article": "146",
+      "rank": 5,
+      "latency_s": 215.0437,
+      "top": [
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "201",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.21104310386839442
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "384",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.14119623835850992
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "42",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.09827228023994077
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "201",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.08350755096913746
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "146",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.04653479118489243
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "41",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.03487835075479965
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "41",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.026765791184443527
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "184",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.023044568168133068
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "38",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.021606722529249528
+        },
+        {
+          "act_ref": "dpr-495-1992",
+          "article": "162",
+          "header": "D.P.R. 495/1992 — Regolamento di esecuzione e di attuazione del nuovo codice della strada.",
+          "score": 0.01793134561609204
+        }
+      ]
+    },
+    {
+      "id": "q27",
+      "kind": "lay",
+      "query": "i rami dell'albero del vicino sporgono nel mio giardino: posso farli tagliare?",
+      "expected_act_ref": "codice-civile",
+      "expected_article": "896",
+      "rank": 1,
+      "latency_s": 138.994,
+      "top": [
+        {
+          "act_ref": "codice-civile",
+          "article": "896",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.9829768628263372
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "899",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.08249594262333432
+        },
+        {
+          "act_ref": "dlgs-285-1992",
+          "article": "29",
+          "header": "Decreto Legislativo 285/1992 — Nuovo codice della strada.",
+          "score": 0.07131009830260555
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "895",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.029262404671624245
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "894",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.016115631852560718
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "892",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.014725306594591602
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "989",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.0120319315470456
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "916",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.0035389956604870063
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "375",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.0035337782759927365
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "840",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.0033645620234618178
+        }
+      ]
+    },
+    {
+      "id": "q28",
+      "kind": "trap",
+      "query": "ingiuria art. 594 codice penale",
+      "expected_act_ref": "codice-penale",
+      "expected_article": "594",
+      "rank": 2,
+      "latency_s": 124.8926,
+      "top": [
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "594",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.5397165261081861
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "594",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.5390440656739928
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "594",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.40801057197898405
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "594",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.16541603977403269
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "299",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.1205437208604306
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "594",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.1139232023635251
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "266",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.09362728773963445
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "595",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.08572228371154392
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "292",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.08167807732564177
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "404",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.07376306036684038
+        }
+      ]
+    },
+    {
+      "id": "q29",
+      "kind": "trap",
+      "query": "oltraggio a pubblico ufficiale",
+      "expected_act_ref": "codice-penale",
+      "expected_article": "341-bis",
+      "rank": 1,
+      "latency_s": 141.4967,
+      "top": [
+        {
+          "act_ref": "codice-penale",
+          "article": "341-bis",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9991590449626708
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "342",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9786805061862315
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "343",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.9614920228394541
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "337",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.8006359897257103
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "336",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.7682635501262364
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "317",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.6467849903373255
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "339",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.6327865074006469
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "615",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.6030444021033572
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "608",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.4974461066053206
+        },
+        {
+          "act_ref": "codice-penale",
+          "article": "338",
+          "header": "Codice 1398/1930 — Approvazione del testo definitivo del Codice Penale.",
+          "score": 0.49126463240826046
+        }
+      ]
+    },
+    {
+      "id": "q30",
+      "kind": "trap",
+      "query": "provvedimenti d'urgenza art. 770 c.p.c.",
+      "expected_act_ref": "codice-procedura-civile",
+      "expected_article": "700",
+      "rank": 7,
+      "latency_s": 145.3933,
+      "top": [
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "77",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.8920169393421495
+        },
+        {
+          "act_ref": "codice-ordinamento-militare",
+          "article": "770",
+          "header": "Codice 66/2010 — Codice dell'ordinamento militare.",
+          "score": 0.7146606436199994
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "770",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.629343422709291
+        },
+        {
+          "act_ref": "dpr-447-1988",
+          "article": "716",
+          "header": "D.P.R. 447/1988 — Approvazione del codice di procedura penale.",
+          "score": 0.49568411996360845
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "741",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.4313447933601897
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "704",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.41759029338377346
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "700",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.39226898534839205
+        },
+        {
+          "act_ref": "codice-civile",
+          "article": "770",
+          "header": "Codice 262/1942 — Approvazione del testo del Codice civile.",
+          "score": 0.3100078833327414
+        },
+        {
+          "act_ref": "codice-procedura-civile",
+          "article": "473-bis",
+          "header": "Codice 1443/1940 — Codice di procedura civile.",
+          "score": 0.30240877408604694
+        },
+        {
+          "act_ref": "rd-327-1942",
+          "article": "770",
+          "header": "Regio Decreto 327/1942 — Approvazione del testo definitivo del Codice della navigazione.",
+          "score": 0.2948740343821759
+        }
+      ]
+    }
+  ]
+}

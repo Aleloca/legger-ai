@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
     corpus_path: Path = Path("../italia-corpus")
+    #: Cross-encoder reranking in the retrieval pipeline (Task E3). Default per
+    #: the plan's decision rule (recall@10 delta < 3pp on the measured eval —
+    #: see backend/eval/results) — flip via RERANK_ENABLED if the trade-off
+    #: changes. E5 consumes this.
+    rerank_enabled: bool = False
 
     @field_validator("corpus_path", mode="after")
     @classmethod

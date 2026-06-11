@@ -47,6 +47,11 @@ def main() -> None:
         help='Dense embedder matching the collection: "bge-m3" or a "voyage-*" model id',
     )
     evalp.add_argument("--k", type=int, default=10, help="Hits retrieved per query (default 10)")
+    evalp.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Comparison mode: run baseline AND cross-encoder rerank (50 -> k), print the delta",
+    )
 
     ingest = subparsers.add_parser("ingest", help="Corpus ingestion (bootstrap, delta)")
     ingest_sub = ingest.add_subparsers(dest="ingest_command")
@@ -203,11 +208,23 @@ def _run_ingest_bootstrap(args: argparse.Namespace) -> None:
 
 
 def _run_eval(args: argparse.Namespace) -> None:
-    from legger.eval_retrieval import format_report, run_eval
+    from legger.eval_retrieval import format_comparison, format_report, run_eval
 
     report, json_path = run_eval(args.collection, args.embedder, k=args.k)
     print(format_report(report))
     print(f"\nJSON report: {json_path}")
+
+    if not args.rerank:
+        return
+
+    print("\nRunning rerank pass (first run downloads BAAI/bge-reranker-v2-m3, ~2.3GB) ...\n")
+    rerank_report, rerank_json_path = run_eval(
+        args.collection, args.embedder, k=args.k, rerank=True
+    )
+    print(format_report(rerank_report))
+    print(f"\nJSON report: {rerank_json_path}")
+    print()
+    print(format_comparison(report, rerank_report))
 
 
 def _run_chat(args: argparse.Namespace) -> None:

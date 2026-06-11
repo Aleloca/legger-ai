@@ -14,12 +14,22 @@ Every run writes a machine-readable JSON report to
 gitignored: the results are the go/no-go evidence. The human-readable output
 ends with the MISS list (top-3 results each), the starting point for any
 post-mortem if the numbers disappoint.
+
+Rerank mode (Task E3): ``run_eval(..., rerank=True)`` widens the hybrid
+search to ``rerank_candidates`` (default 50) and lets the cross-encoder
+(:func:`legger.retrieval.rerank.rerank`) cut back to top-``k``. The CLI
+``legger eval --rerank`` runs BOTH pipelines and prints the delta table
+(:func:`format_comparison`) — the decision evidence for the plan's rule:
+recall@10 delta < 3 points => reranking stays off by default. Per-query
+wall-clock latency is recorded either way, since reranking adds a CPU
+cross-encoder inference per query.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
@@ -89,6 +99,7 @@ class QueryResult(BaseModel):
     expected_act_ref: str
     expected_article: str
     rank: int | None  # 1-based rank of the first correct hit; None = miss
+    latency_s: float = 0.0  # wall-clock seconds for the search (+rerank) call
     top: list[HitSummary]  # the retrieved top-k, compact
 
 
@@ -106,11 +117,14 @@ class EvalReport(BaseModel):
     embedder: str
     k: int
     vigenza: str | None
+    rerank: bool = False
+    rerank_candidates: int | None = None  # hybrid k feeding the reranker
     timestamp: str
     queries: int
     recall_at_5: float
     recall_at_10: float
     mrr: float
+    avg_latency_s: float = 0.0  # mean per-query wall-clock latency
     by_kind: dict[str, KindMetrics]
     results: list[QueryResult]
 
@@ -147,11 +161,20 @@ def evaluate(
     embedder_name: str,
     k: int,
     vigenza: str | None,
+    rerank: bool = False,
+    rerank_candidates: int | None = None,
 ) -> EvalReport:
-    """Run ``search`` over every query and assemble the full report."""
+    """Run ``search`` over every query and assemble the full report.
+
+    ``search`` is the WHOLE per-query pipeline (rerank included, in rerank
+    mode); its wall-clock time is recorded per query, so the with/without
+    latency numbers are directly comparable.
+    """
     results: list[QueryResult] = []
     for q in queries:
+        started = time.perf_counter()
         hits = search(q.query)
+        latency_s = time.perf_counter() - started
         results.append(
             QueryResult(
                 id=q.id,
@@ -160,6 +183,7 @@ def evaluate(
                 expected_act_ref=q.expected_act_ref,
                 expected_article=q.expected_article,
                 rank=correct_rank(hits, q.expected_act_ref, q.expected_article),
+                latency_s=round(latency_s, 4),
                 top=[
                     HitSummary(
                         act_ref=h.act_ref,
@@ -183,16 +207,20 @@ def evaluate(
             queries=len(kind_ranks), recall_at_5=k5, recall_at_10=k10, mrr=kmrr
         )
 
+    avg_latency = sum(r.latency_s for r in results) / len(results) if results else 0.0
     return EvalReport(
         collection=collection,
         embedder=embedder_name,
         k=k,
         vigenza=vigenza,
+        rerank=rerank,
+        rerank_candidates=rerank_candidates,
         timestamp=dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         queries=len(results),
         recall_at_5=r5,
         recall_at_10=r10,
         mrr=mrr,
+        avg_latency_s=round(avg_latency, 4),
         by_kind=by_kind,
         results=results,
     )
@@ -201,10 +229,12 @@ def evaluate(
 def format_report(report: EvalReport) -> str:
     """Human-readable summary: metrics table, per-kind breakdown, miss list."""
     lines: list[str] = []
+    rerank_note = f" rerank=on(candidates={report.rerank_candidates})" if report.rerank else ""
     lines.append(
         f"Retrieval eval — collection={report.collection} embedder={report.embedder} "
-        f"k={report.k} vigenza={report.vigenza} ({report.timestamp})"
+        f"k={report.k} vigenza={report.vigenza}{rerank_note} ({report.timestamp})"
     )
+    lines.append(f"avg latency/query: {report.avg_latency_s:.2f}s")
     lines.append("")
     header = f"{'kind':<10} {'n':>3} {'recall@5':>9} {'recall@10':>10} {'MRR':>6}"
     lines.append(header)
@@ -236,11 +266,58 @@ def write_json_report(report: EvalReport, results_dir: Path = RESULTS_DIR) -> Pa
     """Write the machine-readable report; returns the file path."""
     results_dir.mkdir(parents=True, exist_ok=True)
     stamp = report.timestamp.replace(":", "").replace("-", "").replace("T", "-").rstrip("Z")
-    path = results_dir / f"{report.collection}-{stamp}.json"
+    variant = "-rerank" if report.rerank else ""
+    path = results_dir / f"{report.collection}{variant}-{stamp}.json"
     path.write_text(
         json.dumps(report.model_dump(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return path
+
+
+def format_comparison(baseline: EvalReport, reranked: EvalReport) -> str:
+    """Side-by-side delta table: baseline hybrid vs hybrid + cross-encoder.
+
+    Deltas are in percentage points for the recalls. Ends with the plan's
+    decision rule verdict: recall@10 delta < 3 points => rerank off by default.
+    """
+    lines: list[str] = []
+    lines.append(
+        f"Rerank comparison — collection={baseline.collection} embedder={baseline.embedder} "
+        f"k={baseline.k} (rerank candidates={reranked.rerank_candidates})"
+    )
+    lines.append("")
+    header = f"{'metric':<22} {'baseline':>10} {'rerank':>10} {'delta':>8}"
+    lines.append(header)
+    lines.append("-" * len(header))
+    rows: list[tuple[str, float, float, str]] = [
+        ("recall@5", baseline.recall_at_5, reranked.recall_at_5, "pp"),
+        ("recall@10", baseline.recall_at_10, reranked.recall_at_10, "pp"),
+        ("MRR", baseline.mrr, reranked.mrr, "abs"),
+    ]
+    for kind, base_kind in baseline.by_kind.items():
+        rerank_kind = reranked.by_kind.get(kind)
+        if rerank_kind is None:
+            continue
+        rows.append((f"recall@10 [{kind}]", base_kind.recall_at_10, rerank_kind.recall_at_10, "pp"))
+    for name, base_value, rerank_value, unit in rows:
+        if unit == "pp":
+            delta = (rerank_value - base_value) * 100
+            lines.append(f"{name:<22} {base_value:>10.1%} {rerank_value:>10.1%} {delta:>+6.1f}pp")
+        else:
+            delta = rerank_value - base_value
+            lines.append(f"{name:<22} {base_value:>10.3f} {rerank_value:>10.3f} {delta:>+8.3f}")
+    lines.append(
+        f"{'avg latency/query':<22} {baseline.avg_latency_s:>9.2f}s {reranked.avg_latency_s:>9.2f}s "
+        f"{reranked.avg_latency_s - baseline.avg_latency_s:>+7.2f}s"
+    )
+    lines.append("")
+    delta_pp = (reranked.recall_at_10 - baseline.recall_at_10) * 100
+    verdict = "ON" if delta_pp >= 3 else "OFF"
+    lines.append(
+        f"DECISION RULE: recall@10 delta = {delta_pp:+.1f}pp "
+        f"({'≥' if delta_pp >= 3 else '<'} 3pp) => rerank default {verdict}."
+    )
+    return "\n".join(lines)
 
 
 def run_eval(
@@ -249,25 +326,37 @@ def run_eval(
     *,
     k: int = 10,
     vigenza: str | None = "vigente",
+    rerank: bool = False,
+    rerank_candidates: int = 50,
     settings: Settings | None = None,
     queries_path: Path = QUERIES_PATH,
     results_dir: Path = RESULTS_DIR,
 ) -> tuple[EvalReport, Path]:
-    """Full eval run against the live Qdrant: report + JSON path."""
+    """Full eval run against the live Qdrant: report + JSON path.
+
+    With ``rerank=True`` each query retrieves ``rerank_candidates`` hybrid
+    hits and the cross-encoder (:mod:`legger.retrieval.rerank`) cuts them
+    back to ``k`` — metrics are computed on the reranked top-``k``.
+    """
     settings = settings or Settings()
     embedder = get_embedder(embedder_name)
     client = QdrantClient(url=settings.qdrant_url)
     queries = load_queries(queries_path)
 
     def search(query: str) -> list[SearchHit]:
-        return hybrid_search(
+        hits = hybrid_search(
             query,
             collection=collection,
             embedder=embedder,
             client=client,
-            k=k,
+            k=rerank_candidates if rerank else k,
             vigenza=vigenza,
         )
+        if rerank:
+            from legger.retrieval.rerank import rerank as rerank_hits
+
+            hits = rerank_hits(query, hits, top_k=k)
+        return hits
 
     report = evaluate(
         queries,
@@ -276,6 +365,8 @@ def run_eval(
         embedder_name=embedder_name,
         k=k,
         vigenza=vigenza,
+        rerank=rerank,
+        rerank_candidates=rerank_candidates if rerank else None,
     )
     path = write_json_report(report, results_dir)
     return report, path

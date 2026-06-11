@@ -71,3 +71,39 @@ def test_eval_invokes_run_eval(
     out = capsys.readouterr().out
     assert "collection=norme_test" in out
     assert "JSON report: eval/results/fake.json" in out
+
+
+def test_eval_rerank_runs_both_and_prints_comparison(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """`--rerank` runs baseline + rerank pipelines and ends with the delta table."""
+    import legger.eval_retrieval as eval_mod
+
+    calls: list[dict] = []
+
+    def fake_run_eval(collection: str, embedder: str, *, k: int, rerank: bool = False):
+        calls.append({"collection": collection, "k": k, "rerank": rerank})
+        report = eval_mod.evaluate(
+            [],
+            lambda q: [],
+            collection=collection,
+            embedder_name=embedder,
+            k=k,
+            vigenza="vigente",
+            rerank=rerank,
+            rerank_candidates=50 if rerank else None,
+        )
+        return report, f"eval/results/fake{'-rerank' if rerank else ''}.json"
+
+    monkeypatch.setattr(eval_mod, "run_eval", fake_run_eval)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["legger", "eval", "--collection", "norme_test", "--embedder", "voyage-law-2", "--rerank"],
+    )
+    cli.main()
+    assert [c["rerank"] for c in calls] == [False, True]
+    out = capsys.readouterr().out
+    assert "JSON report: eval/results/fake.json" in out
+    assert "JSON report: eval/results/fake-rerank.json" in out
+    assert "Rerank comparison" in out
+    assert "DECISION RULE" in out

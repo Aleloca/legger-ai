@@ -16,6 +16,7 @@ from legger.eval_retrieval import (
     EvalQuery,
     correct_rank,
     evaluate,
+    format_comparison,
     format_report,
     load_queries,
     write_json_report,
@@ -213,6 +214,59 @@ def test_write_json_report(tmp_path: Path) -> None:
     assert data["embedder"] == "fake"
     assert data["results"][0]["rank"] == 1
     assert data["results"][0]["top"][0]["act_ref"] == "codice-civile"
+
+
+# --- rerank comparison (E3) -----------------------------------------------------
+
+
+def _report_with_recall(rank: int | None, *, rerank: bool = False):
+    """One-query report whose recall@10 is 1.0 (rank<=10) or 0.0 (None)."""
+    queries = [make_query("q1")]
+    hits = [make_hit("codice-penale", "999")] * ((rank or 11) - 1)
+    if rank is not None:
+        hits = hits[: rank - 1] + [make_hit("codice-civile", "2051")]
+    return evaluate(
+        queries,
+        fixed_search({"query q1": hits}),
+        collection="norme_test",
+        embedder_name="fake",
+        k=10,
+        vigenza="vigente",
+        rerank=rerank,
+        rerank_candidates=50 if rerank else None,
+    )
+
+
+def test_evaluate_records_latency() -> None:
+    report = _report_with_recall(1)
+    assert report.results[0].latency_s >= 0.0
+    assert report.avg_latency_s == pytest.approx(
+        sum(r.latency_s for r in report.results) / len(report.results)
+    )
+
+
+def test_format_comparison_decision_rule_on() -> None:
+    baseline = _report_with_recall(None)  # recall@10 = 0%
+    reranked = _report_with_recall(3, rerank=True)  # recall@10 = 100% -> +100pp
+    text = format_comparison(baseline, reranked)
+    assert "rerank default ON" in text
+    assert "+100.0pp" in text
+
+
+def test_format_comparison_decision_rule_off() -> None:
+    baseline = _report_with_recall(2)
+    reranked = _report_with_recall(1, rerank=True)  # same recall@10 -> +0pp
+    text = format_comparison(baseline, reranked)
+    assert "rerank default OFF" in text
+
+
+def test_write_json_report_rerank_suffix(tmp_path: Path) -> None:
+    report = _report_with_recall(1, rerank=True)
+    path = write_json_report(report, tmp_path)
+    assert path.name.startswith("norme_test-rerank-")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["rerank"] is True
+    assert data["rerank_candidates"] == 50
 
 
 # --- queries.yaml loading -----------------------------------------------------
