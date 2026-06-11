@@ -79,6 +79,25 @@ def main() -> None:
         action="store_true",
         help="Parse+chunk statistics only: no embedding, no DB writes (C6 cost estimate)",
     )
+    delta_p = ingest_sub.add_parser(
+        "delta",
+        help="Delta ingestion: git pull + diff from the last successful run's commit",
+    )
+    delta_p.add_argument(
+        "--embedder",
+        default="voyage-4-large",
+        help='Dense embedder: "bge-m3" or a "voyage-*" model id (default voyage-4-large)',
+    )
+    delta_p.add_argument(
+        "--qdrant-collection",
+        default="norme",
+        help='Target Qdrant collection (default "norme")',
+    )
+    delta_p.add_argument(
+        "--no-pull",
+        action="store_true",
+        help="Skip `git pull --ff-only` and diff against the local corpus HEAD",
+    )
 
     chat = subparsers.add_parser("chat", help="Interactive grounded chat over the indexed corpus")
     chat.add_argument(
@@ -114,6 +133,9 @@ def main() -> None:
     if args.command == "ingest":
         if getattr(args, "ingest_command", None) == "bootstrap":
             _run_ingest_bootstrap(args)
+            return
+        if getattr(args, "ingest_command", None) == "delta":
+            _run_ingest_delta(args)
             return
         ingest.print_help()
         raise SystemExit(1)
@@ -203,6 +225,50 @@ def _run_ingest_bootstrap(args: argparse.Namespace) -> None:
         if len(report.errors) > 20:
             print(f"  ... and {len(report.errors) - 20} more")
 
+    if report.status == "failed":
+        raise SystemExit(1)
+
+
+def _run_ingest_delta(args: argparse.Namespace) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    from legger.ingestion.delta import DeltaRefusedError, delta
+
+    try:
+        report = delta(
+            embedder_name=args.embedder,
+            qdrant_collection=args.qdrant_collection,
+            pull=not args.no_pull,
+        )
+    except DeltaRefusedError as exc:
+        print(f"Delta rifiutato: {exc}")
+        raise SystemExit(1) from exc
+
+    span = f"{(report.commit_from or '?')[:12]}..{(report.commit_to or '?')[:12]}"
+    if report.files_changed == 0:
+        print(f"\nRun #{report.run_id} ({span}): corpus aggiornato, nessuna modifica.")
+    else:
+        print(
+            f"\nRun #{report.run_id} {report.status} ({span}): "
+            f"{report.files_changed} file cambiati — "
+            f"{report.files_indexed} indicizzati, {report.files_moved} spostati, "
+            f"{report.files_deleted} eliminati, {report.files_skipped} skip "
+            f"({report.files_resume_skipped} resume + {report.files_dedup_skipped} dedup), "
+            f"{report.chunks_indexed} chunk indicizzati, "
+            f"{report.stale_points_deleted} punti stantii eliminati, "
+            f"{report.vigenza_flips} flip di vigenza, in {report.elapsed_s:.0f}s."
+        )
+    if report.note:
+        print(f"Note: {report.note}")
+    if report.errors:
+        print(f"{len(report.errors)} file(s) failed (recorded in the run row):")
+        for entry in report.errors[:20]:
+            print(f"  - {entry['file_path']}: {entry['error']}")
+        if len(report.errors) > 20:
+            print(f"  ... and {len(report.errors) - 20} more")
     if report.status == "failed":
         raise SystemExit(1)
 

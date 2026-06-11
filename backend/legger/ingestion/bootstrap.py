@@ -257,6 +257,13 @@ class _LotFlusher:
     lot-level Qdrant resume check). After each flush, queued files whose
     chunks are now all durable are handed to ``on_durable`` -- in submission
     order, so an owner file is always released before its dedup followers.
+
+    ``resume=False`` disables the lot-level Qdrant skip. Point ids are
+    uuid5(chunk_id) and chunk ids are content-INdependent, so a *modified*
+    file produces the same ids with different text: the delta path (D3) must
+    re-embed unconditionally or modified chunks would be silently skipped.
+    Bootstrap keeps ``resume=True`` (nothing pre-exists with different text;
+    the file-level sha gate already excludes processed files).
     """
 
     def __init__(
@@ -267,6 +274,8 @@ class _LotFlusher:
         sparse_model: Any,
         lot_size: int,
         on_durable: Any,  # callable(list[_FileTask]) -> None
+        *,
+        resume: bool = True,
     ) -> None:
         self._client = client
         self._collection_name = collection_name
@@ -274,6 +283,7 @@ class _LotFlusher:
         self._sparse_model = sparse_model
         self._lot_size = lot_size
         self._on_durable = on_durable
+        self._resume = resume
         self._buffer: list[Chunk] = []
         self._queue: deque[list] = deque()  # [task, chunks_not_yet_flushed]
         self.chunks_indexed = 0
@@ -306,7 +316,7 @@ class _LotFlusher:
             self._embedder,
             self._sparse_model,
             lot_size=n,
-            resume=True,  # belt-and-braces lot-level Qdrant check
+            resume=self._resume,  # belt-and-braces lot-level Qdrant check
         )
         self.chunks_indexed += done
         self.chunks_skipped += skipped
@@ -332,16 +342,33 @@ class _LotFlusher:
 # ---------------------------------------------------------------------------
 
 
-def _open_run(engine: Engine, commit_to: str | None) -> int:
+def _open_run(
+    engine: Engine,
+    commit_to: str | None,
+    *,
+    kind: str = "bootstrap",
+    commit_from: str | None = None,
+) -> int:
     with engine.begin() as conn:
         return conn.execute(
             ingestion_runs.insert()
-            .values(kind="bootstrap", status="running", commit_to=commit_to, started_at=func.now())
+            .values(
+                kind=kind,
+                status="running",
+                commit_from=commit_from,
+                commit_to=commit_to,
+                started_at=func.now(),
+            )
             .returning(ingestion_runs.c.id)
         ).scalar_one()
 
 
-def _close_run(engine: Engine, run_id: int, report: BootstrapReport) -> None:
+def _close_run(engine: Engine, run_id: int, report: Any) -> None:
+    """Close the run row from any report exposing the BootstrapReport counters.
+
+    Duck-typed on ``status``/``note``/``errors``/``files_processed``/
+    ``files_skipped`` so the delta path (D3) can reuse it with its own report.
+    """
     errors = list(report.errors)
     if report.note:
         errors.append({"file_path": None, "error": report.note})
@@ -647,9 +674,7 @@ def _dry_run(settings: Settings, files: list[Path]) -> BootstrapReport:
             stats["files_dedup_skipped"] += 1
             continue
         try:
-            chunks = chunk_act(
-                act, ref, vigenza=vigenza, collection=collection, file_path=rel_path
-            )
+            chunks = chunk_act(act, ref, vigenza=vigenza, collection=collection, file_path=rel_path)
         except Exception as exc:  # mirror the real run: per-file error, keep going
             logger.exception("failed to chunk %s", rel_path)
             report.errors.append({"file_path": rel_path, "error": f"{type(exc).__name__}: {exc}"})
