@@ -154,13 +154,19 @@ def retrieve(
     embedder: Embedder,
     k: int = 10,
     citation_budget: int = 4000,
+    rerank_enabled: bool | None = None,
 ) -> RetrievalResult:
     """Run the full retrieval pipeline for the current user turn.
 
     See the module docstring for the stage-by-stage logic and the failure
     policy. ``engine`` may be ``None`` (the fastpath acts-table probe is then
-    skipped; resolution falls through to Qdrant alone). ``Settings`` is read
-    per call for the ``rerank_enabled`` toggle.
+    skipped; resolution falls through to Qdrant alone). ``rerank_enabled``
+    overrides the E3 cross-encoder toggle; ``None`` (the default) reads
+    ``Settings().rerank_enabled`` per call.
+
+    This is a blocking call (Qdrant REST, Postgres, Anthropic, embedding):
+    in async contexts run it in a threadpool (e.g.
+    ``fastapi.concurrency.run_in_threadpool``), never on the event loop.
 
     Raises whatever :func:`~legger.retrieval.search.hybrid_search` raises
     (the core stage), and :class:`ValueError` when ``messages`` contains no
@@ -183,7 +189,12 @@ def retrieve(
         rewritten_query = analysis.rewritten_query
 
     # 2-4. Fast path: extract (original first, then rewritten), bind/drop
-    # unbound refs, resolve. Any failure degrades to hybrid-only.
+    # unbound refs, resolve. Any failure degrades to hybrid-only. The two
+    # resolve_refs calls share one failure domain (a single try block): if
+    # the article-level resolve succeeds but the act-level one raises, BOTH
+    # are discarded. Deliberate — both calls hit the same Qdrant/Postgres
+    # backends, so a failure in one means the other's results are suspect
+    # too, and the degrade target (hybrid-only) is the same either way.
     article_hits: list[SearchHit] = []
     act_hits: list[SearchHit] = []
     try:
@@ -206,7 +217,9 @@ def retrieve(
     # 5. Hybrid search (the core: failures propagate). Historical intent
     # disables the vigenza filter (no git time travel yet — Fase 3).
     vigenza = None if analysis is not None and analysis.wants_historical else "vigente"
-    if Settings().rerank_enabled:
+    if rerank_enabled is None:
+        rerank_enabled = Settings().rerank_enabled
+    if rerank_enabled:
         candidates = hybrid_search(
             rewritten_query,
             collection=collection,

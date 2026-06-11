@@ -1,7 +1,7 @@
 """Tests for legger.retrieval.pipeline (Task E5): the unified pipeline.
 
 Every I/O stage is mocked (understand_query, resolve_refs, hybrid_search,
-rerank, follow_citations, Settings) — what is under test is the pipeline's
+rerank, follow_citations) — what is under test is the pipeline's
 own LOGIC: routing (explicit refs -> fastpath first), act_ref=None binding
 from context, act-level supplement capping, merge/dedup/cap rules, the
 rerank toggle wiring, the vigenza filter policy, citation appending and
@@ -92,6 +92,7 @@ class Harness:
 
         def fake_resolve(refs, *, qdrant_client, collection, engine=None):
             assert qdrant_client is self.qdrant
+            assert engine is self.engine
             self.resolve_calls.append(list(refs))
             if self.resolve_error is not None:
                 raise self.resolve_error
@@ -116,6 +117,7 @@ class Harness:
 
         def fake_follow(hits, *, qdrant_client, collection, engine=None, token_budget):
             assert qdrant_client is self.qdrant
+            assert engine is self.engine
             self.follow_calls.append({"hits": list(hits), "token_budget": token_budget})
             if self.follow_error is not None:
                 raise self.follow_error
@@ -126,11 +128,19 @@ class Harness:
         monkeypatch.setattr(pipeline, "hybrid_search", fake_hybrid)
         monkeypatch.setattr(pipeline, "rerank", fake_rerank)
         monkeypatch.setattr(pipeline, "follow_citations", fake_follow)
-        monkeypatch.setattr(
-            pipeline, "Settings", lambda: SimpleNamespace(rerank_enabled=self.rerank_enabled)
-        )
 
-    def run(self, messages: list[dict], *, k: int = 10, citation_budget: int = 4000):
+    _UNSET = object()
+
+    def run(
+        self,
+        messages: list[dict],
+        *,
+        k: int = 10,
+        citation_budget: int = 4000,
+        rerank_enabled: Any = _UNSET,
+    ):
+        if rerank_enabled is self._UNSET:
+            rerank_enabled = self.rerank_enabled
         return retrieve(
             messages,
             qdrant_client=self.qdrant,
@@ -140,6 +150,7 @@ class Harness:
             embedder=self.embedder,
             k=k,
             citation_budget=citation_budget,
+            rerank_enabled=rerank_enabled,
         )
 
 
@@ -345,6 +356,16 @@ def test_rerank_enabled_widens_pool_then_cuts_to_k(harness: Harness) -> None:
     assert call["hits"] == harness.hybrid_returns
     # the fake reranker reverses: the pipeline must use ITS output
     assert [h.chunk_id for h in result.hits] == ["hy#5", "hy#4", "hy#3"]
+
+
+def test_rerank_default_none_reads_settings(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """rerank_enabled=None (the production default) falls back to Settings."""
+    monkeypatch.setattr(pipeline, "Settings", lambda: SimpleNamespace(rerank_enabled=True))
+    harness.run([user("responsabilità del custode")], k=3, rerank_enabled=None)
+    assert harness.hybrid_calls[0]["k"] == RERANK_CANDIDATES
+    assert len(harness.rerank_calls) == 1
 
 
 def test_rerank_failure_degrades_to_rrf_order(harness: Harness) -> None:

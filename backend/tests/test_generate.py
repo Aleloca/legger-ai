@@ -1,5 +1,5 @@
 """Unit tests for legger.chat (prompts + generate) — mocked Anthropic client,
-mocked retrieval, no network.
+no network.
 
 Pins down: context formatting (header dedup, one block per hit), the marker
 instruction in the system prompt, and the message/system assembly sent to the
@@ -12,13 +12,7 @@ from typing import Any
 import pytest
 
 from legger.chat import generate as generate_mod
-from legger.chat.generate import (
-    MODEL_SONNET,
-    chat_once,
-    last_user_message,
-    retrieve_for_messages,
-    stream_answer,
-)
+from legger.chat.generate import MODEL_SONNET, last_user_message, stream_answer
 from legger.chat.prompts import SYSTEM_PROMPT, format_context
 from legger.retrieval.search import SearchHit
 
@@ -137,33 +131,6 @@ def test_last_user_message_raises_without_user_turn() -> None:
         last_user_message([{"role": "assistant", "content": "x"}])
 
 
-def test_retrieve_for_messages_queries_last_user_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[str, dict[str, Any]]] = []
-
-    def fake_search(query: str, **kwargs: Any) -> list[SearchHit]:
-        calls.append((query, kwargs))
-        return [make_hit()]
-
-    monkeypatch.setattr(generate_mod, "hybrid_search", fake_search)
-    messages = [
-        {"role": "user", "content": "art. 2051 c.c."},
-        {"role": "assistant", "content": "..."},
-        {"role": "user", "content": "e la prova liberatoria?"},
-    ]
-    hits = retrieve_for_messages(
-        messages, collection="norme_test", embedder="emb", client="qdrant", k=7
-    )
-    assert hits == [make_hit()]
-    assert calls == [
-        (
-            "e la prova liberatoria?",
-            {"collection": "norme_test", "embedder": "emb", "client": "qdrant", "k": 7},
-        )
-    ]
-
-
 def test_stream_answer_message_assembly() -> None:
     fake = FakeAnthropic()
     messages = [{"role": "user", "content": "art. 2051 c.c."}]
@@ -186,26 +153,6 @@ def test_stream_answer_message_assembly() -> None:
     # Context block: formatted hits inside <contesto>, after the stable prompt.
     assert "<contesto>" in system[1]["text"]
     assert format_context(hits) in system[1]["text"]
-
-
-def test_chat_once_composes_retrieval_and_generation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    hit = make_hit()
-    monkeypatch.setattr(generate_mod, "hybrid_search", lambda query, **kwargs: [hit])
-    fake = FakeAnthropic(deltas=["a", "b"])
-
-    out = list(
-        chat_once(
-            [{"role": "user", "content": "difesa legittima"}],
-            collection="norme_test",
-            embedder="emb",
-            client="qdrant",
-            anthropic_client=fake,
-        )
-    )
-    assert out == ["a", "b"]
-    assert format_context([hit]) in fake.calls[0]["system"][1]["text"]
 
 
 def test_model_sonnet_constant() -> None:
