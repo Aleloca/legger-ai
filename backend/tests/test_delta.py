@@ -372,6 +372,95 @@ def test_deleted_file_flips_vigenza_and_keeps_points(
 
 
 @pytest.mark.db
+def test_owner_rename_with_edit_reclaims_ownership_and_reindexes(
+    repo: Path, engine: Engine, qdrant: QdrantClient
+) -> None:
+    # R<100 (git mv + edit in ONE commit) decomposes into delete(old) +
+    # upsert(new). The delete must RELEASE the act's ownership so the upsert
+    # reclaims the same act_ref and re-indexes under the new path — without
+    # the release the upsert hits the A7 dedup branch and the act is left
+    # abrogato, pointing at the dead path, with stale text, unhealable by a
+    # delta re-run (the progress sha matches).
+    write_act(repo, COLL, "atto-99001.md", synthetic_act(99001, articles=3))
+    commit_all(repo)
+    run_bootstrap(repo, engine, qdrant)
+    assert qdrant.count(QCOLL).count == 3
+
+    git(repo, "mv", f"{COLL}/atto-99001.md", f"{COLL}/atto-rinominato-99001.md")
+    new_path = repo / COLL / "atto-rinominato-99001.md"
+    edited = new_path.read_text(encoding="utf-8").replace("Primo comma", "Comma riscritto")
+    new_path.write_text(edited, encoding="utf-8")
+    c2 = commit_all(repo)
+    embedder = FakeEmbedder()
+    report = run_delta(repo, engine, qdrant, embedder)
+
+    assert report.status == "completed"
+    assert report.files_deleted == 1  # the old path
+    assert report.files_indexed == 1  # the new path, fully re-indexed
+    assert report.files_dedup_skipped == 0  # NOT the A7 branch
+    assert embedder.calls == [3]  # the edited content was re-embedded
+    assert qdrant.count(QCOLL).count == 3  # deterministic ids: no stale points
+    rel_new = f"{COLL}/atto-rinominato-99001.md"
+    with engine.connect() as conn:
+        act = conn.execute(select(acts).where(acts.c.act_ref == "legge-99001-2099")).one()
+        assert act.vigenza == "vigente"  # the conservative flip was overwritten
+        assert act.file_path == rel_new  # ownership transferred to the new path
+        assert act.last_commit_sha == c2
+        old_rows = conn.execute(
+            select(ingestion_progress).where(
+                ingestion_progress.c.file_path == f"{COLL}/atto-99001.md"
+            )
+        ).all()
+        assert old_rows == []
+        progress = conn.execute(
+            select(ingestion_progress).where(ingestion_progress.c.file_path == rel_new)
+        ).one()
+        assert progress.commit_sha == file_blob_sha(new_path.read_bytes())
+        assert progress.act_ref == "legge-99001-2099"
+    points = act_points(qdrant, "legge-99001-2099")
+    assert len(points) == 3
+    for point in points:
+        assert point.payload["vigenza"] == "vigente"
+        assert point.payload["file_path"] == rel_new
+        assert "Comma riscritto" in point.payload["text"]
+
+
+@pytest.mark.db
+def test_owner_delete_with_unrelated_add_keeps_conservative_flip(
+    repo: Path, engine: Engine, qdrant: QdrantClient
+) -> None:
+    # Releasing ownership on delete must NOT weaken the conservative path:
+    # when the same-range add derives a DIFFERENT act_ref, nothing reclaims
+    # the deleted act and it stays abrogato with its points preserved.
+    write_act(repo, COLL, "atto-99001.md", synthetic_act(99001))
+    commit_all(repo)
+    run_bootstrap(repo, engine, qdrant)
+
+    (repo / COLL / "atto-99001.md").unlink()
+    # Distinctive content so git's rename detection cannot pair the pair;
+    # even if it did (R<100), the decomposition is the same delete+upsert.
+    write_act(repo, COLL, "atto-99002.md", synthetic_act(99002, articles=3))
+    commit_all(repo)
+    report = run_delta(repo, engine, qdrant)
+
+    assert report.status == "completed"
+    assert report.files_deleted == 1
+    assert report.files_indexed == 1  # the unrelated new act
+    assert report.vigenza_flips == 1
+    with engine.connect() as conn:
+        gone = conn.execute(select(acts).where(acts.c.act_ref == "legge-99001-2099")).one()
+        assert gone.vigenza == "abrogato"  # conservative flip intact
+        assert gone.file_path == f"{COLL}/atto-99001.md"  # documented limitation
+        added = conn.execute(select(acts).where(acts.c.act_ref == "legge-99002-2099")).one()
+        assert added.vigenza == "vigente"
+        assert added.file_path == f"{COLL}/atto-99002.md"
+    old_points = act_points(qdrant, "legge-99001-2099")
+    assert len(old_points) == 2  # historical points preserved
+    assert all(p.payload["vigenza"] == "abrogato" for p in old_points)
+    assert len(act_points(qdrant, "legge-99002-2099")) == 3
+
+
+@pytest.mark.db
 def test_duplicate_added_in_abrogati_flips_vigenza_without_new_points(
     repo: Path, engine: Engine, qdrant: QdrantClient
 ) -> None:

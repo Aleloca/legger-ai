@@ -262,13 +262,13 @@ def _run_ingest_delta(args: argparse.Namespace) -> None:
             f"{report.vigenza_flips} flip di vigenza, in {report.elapsed_s:.0f}s."
         )
     if report.note:
-        print(f"Note: {report.note}")
+        print(f"Nota: {report.note}")
     if report.errors:
-        print(f"{len(report.errors)} file(s) failed (recorded in the run row):")
+        print(f"{len(report.errors)} file falliti (registrati nella riga della run):")
         for entry in report.errors[:20]:
             print(f"  - {entry['file_path']}: {entry['error']}")
         if len(report.errors) > 20:
-            print(f"  ... and {len(report.errors) - 20} more")
+            print(f"  ... e altri {len(report.errors) - 20}")
     if report.status == "failed":
         raise SystemExit(1)
 

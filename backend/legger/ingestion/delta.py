@@ -41,13 +41,20 @@ Change semantics (per diff status)
   (they serve temporal versioning). A rename of a non-owner duplicate only
   moves its progress row (plus the A7 vigenza exception).
 - **R<100 (rename + edit)** — decomposed into delete(old) + upsert(new):
-  the content changed, so the new path goes through the full pipeline.
+  the content changed, so the new path goes through the full pipeline. The
+  delete releases the act's ownership (processed first, see below), so the
+  upsert of the new path reclaims the same act_ref and re-indexes it under
+  the new location — the re-upserted points overwrite the conservative
+  abrogato flip and the stale-id cleanup removes any chunks the new text no
+  longer produces.
 - **D (deleted upstream)** — conservative: the act flips to ``abrogato``
   (Postgres + point payloads) when the deleted path owned it and it was
   ``vigente``; an already abrogato/decaduto act keeps its state. Points are
   kept (temporal versioning); the progress row is deleted because the file
-  no longer exists. Deleting a non-owner duplicate touches nothing but its
-  progress row.
+  no longer exists, and the act's ownership is released within the run so a
+  same-range upsert deriving the same act_ref can reclaim it (deletes are
+  always processed before upserts). Deleting a non-owner duplicate touches
+  nothing but its progress row.
 
 Stale-point cleanup vs historical preservation
 ==============================================
@@ -78,7 +85,8 @@ Known conservative limitations (documented trade-offs):
   acts row pointing at the vanished path (vigenza untouched);
 - deleting the owner file flips the act to abrogato even when a duplicate
   copy still exists in a vigente collection (the duplicate's progress row
-  blocks re-evaluation); both heal under a re-bootstrap.
+  blocks re-evaluation); both heal only under a FROM-SCRATCH re-bootstrap
+  (an incremental re-bootstrap resume-skips on the matching progress sha).
 """
 
 from __future__ import annotations
@@ -530,6 +538,17 @@ def delta(
             vigenza_of[act_ref] = "abrogato"
             report.vigenza_flips += 1
             logger.info("%s eliminato a monte: %s -> abrogato (punti conservati)", path, act_ref)
+        if act_ref is not None:
+            # The deleted path owned the act: release the in-run ownership so
+            # a same-range upsert deriving the same act_ref (R<100 rename,
+            # delete + replacement add) reclaims it and runs the full index
+            # pipeline instead of the A7 dedup branch. The re-upsert then
+            # overwrites the conservative flip (acts row, point payloads) and
+            # the stale-id cleanup handles any chunk shrinkage. Deletes run
+            # BEFORE moves and upserts (see the loop below), so the release is
+            # always visible to the reclaiming upsert.
+            owner_of.pop(act_ref, None)
+            act_of_owner_path.pop(path, None)
         progress_sha.pop(path, None)
         progress_ref.pop(path, None)
         report.files_deleted += 1
@@ -615,6 +634,9 @@ def delta(
                 if guard.received is not None:
                     raise _Interrupted(signal.Signals(guard.received).name)
 
+            # ORDER MATTERS: deletes first, so an owner-file delete releases
+            # ownership before any upsert in the same range tries to reclaim
+            # the act_ref (R<100 rename of the owner file).
             for path in deletes:
                 check_interrupt()
                 apply_delete(path)
