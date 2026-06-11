@@ -140,6 +140,33 @@
  * con gli stessi token.
  */
 
+/*
+ * Ellissi animata (solo CSS) per "sto cercando nel corpus…":
+ * i puntini compaiono uno alla volta, a passi, senza dissolvenze.
+ */
+.searching-ellipsis::after {
+  content: "";
+  display: inline-block;
+  width: 3ch;
+  text-align: left;
+  animation: searching-ellipsis 1.4s steps(4, jump-none) infinite;
+}
+
+@keyframes searching-ellipsis {
+  0% {
+    content: "";
+  }
+  33% {
+    content: ".";
+  }
+  66% {
+    content: "..";
+  }
+  100% {
+    content: "...";
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

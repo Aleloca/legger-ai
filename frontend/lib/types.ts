@@ -1,0 +1,64 @@
+/**
+ * Tipi che rispecchiano il contratto SSE di POST /chat
+ * (vedi backend/legger/api/chat.py, docstring del modulo).
+ *
+ * Gli eventi arrivono in quest'ordine: status → sources → token*
+ * (con citation subito dopo i token-marker) → done. `error` è
+ * terminale: nessun `done` lo segue.
+ */
+
+/** Una provvigione consultata dal retrieval (evento `sources`). */
+export interface Source {
+  act_ref: string;
+  article: string;
+  title: string | null;
+  vigenza: string | null;
+  /** Frammento deep-link per la split-view (G4), es. `art-2051`. */
+  anchor: string;
+}
+
+/** Esito del guardrail per un marker `[[act_ref|art.N|c.M]]` (evento `citation`). */
+export interface Citation {
+  marker: string;
+  act_ref: string;
+  article: string;
+  comma: string | null;
+  title: string | null;
+  vigenza: string | null;
+  verified: boolean;
+  reason:
+    | "ok"
+    | "act_not_in_context"
+    | "article_not_in_context"
+    | "comma_not_in_context";
+}
+
+export interface DoneData {
+  stop_reason: string | null;
+  /** True quando il modello ha raggiunto il tetto di token (risposta a metà). */
+  truncated: boolean;
+}
+
+/** Unione discriminata degli eventi del flusso SSE. */
+export type SseEvent =
+  | { event: "status"; data: { stage: string } }
+  | { event: "sources"; data: { sources: Source[] } }
+  | { event: "token"; data: { text: string } }
+  | { event: "citation"; data: Citation }
+  | { event: "done"; data: DoneData }
+  | { event: "error"; data: { message: string } };
+
+/** Un turno di conversazione, com'è tenuto nello stato React (nessuna persistenza). */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  /** Trascrizione grezza: i marker `[[...]]` restano nel testo. */
+  content: string;
+  /** Solo assistant: presenti dopo l'evento `sources`. */
+  sources?: Source[];
+  /** Solo assistant: una voce per ogni evento `citation` ricevuto. */
+  citations?: Citation[];
+  /** Solo assistant: true se `done` ha riportato truncated. */
+  truncated?: boolean;
+  /** Solo assistant: messaggio dell'evento `error` (terminale). */
+  error?: string | null;
+}

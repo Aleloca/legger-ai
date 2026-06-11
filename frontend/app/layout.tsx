@@ -41,7 +41,15 @@ export default function RootLayout({
       lang="it"
       className={`${fraunces.variable} ${ibmPlexSans.variable} ${literata.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex h-dvh flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <footer className="border-t border-border px-6 py-3">
+          <p className="mx-auto max-w-3xl text-center text-xs leading-relaxed text-muted-foreground">
+            Strumento informativo, non costituisce consulenza legale. Fa fede
+            la Gazzetta Ufficiale.
+          </p>
+        </footer>
+      </body>
     </html>
   );
 }
