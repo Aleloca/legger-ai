@@ -98,7 +98,7 @@ def test_settings_telegram_defaults_empty() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_repo(path: Path, *, days_ago: int) -> None:
+def _make_repo(path: Path, *, days_ago: float) -> None:
     """Git repo with one commit whose committer date is ``days_ago`` days old."""
     date = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
     env = {
@@ -134,17 +134,24 @@ def test_check_upstream_fresh_no_alert(tmp_path: Path, sent_alerts: list[str]) -
     repo = tmp_path / "corpus"
     _make_repo(repo, days_ago=1)
     state = tmp_path / "alerts.json"
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is False
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=False, alert_sent=False)
     assert sent_alerts == []
     assert not state.exists()
 
 
-def test_check_upstream_stale_alerts_with_days(tmp_path: Path, sent_alerts: list[str]) -> None:
+def test_check_upstream_stale_alerts_with_days_rounded_up(
+    tmp_path: Path, sent_alerts: list[str]
+) -> None:
     repo = tmp_path / "corpus"
-    _make_repo(repo, days_ago=30)
+    _make_repo(repo, days_ago=29.5)
     state = tmp_path / "alerts.json"
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=True)
     assert len(sent_alerts) == 1
+    # 29.5 days reads "30 giorni": age is rounded UP, never truncated down
     assert "nessun commit upstream da 30 giorni" in sent_alerts[0]
     assert json.loads(state.read_text())["upstream_stale"]  # dedup timestamp recorded
 
@@ -154,7 +161,8 @@ def test_check_upstream_custom_max_days(tmp_path: Path, sent_alerts: list[str]) 
     _make_repo(repo, days_ago=10)
     state = tmp_path / "alerts.json"
     assert (
-        alerts.check_upstream_freshness(repo, 14, settings=_settings(), state_path=state) is False
+        alerts.check_upstream_freshness(repo, 14, settings=_settings(), state_path=state).stale
+        is False
     )
     assert sent_alerts == []
 
@@ -163,9 +171,14 @@ def test_check_upstream_dedup_within_24h(tmp_path: Path, sent_alerts: list[str])
     repo = tmp_path / "corpus"
     _make_repo(repo, days_ago=30)
     state = tmp_path / "alerts.json"
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
-    assert len(sent_alerts) == 1  # second call still reports stale but does not re-send
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=True)
+    # second call still reports stale but does not re-send
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=False)
+    assert len(sent_alerts) == 1
 
 
 def test_check_upstream_dedup_expires_after_24h(tmp_path: Path, sent_alerts: list[str]) -> None:
@@ -174,10 +187,28 @@ def test_check_upstream_dedup_expires_after_24h(tmp_path: Path, sent_alerts: lis
     state = tmp_path / "alerts.json"
     stale_ts = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
     state.write_text(json.dumps({"upstream_stale": stale_ts}), encoding="utf-8")
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=True)
     assert len(sent_alerts) == 1
     # the dedup timestamp moved forward
     assert json.loads(state.read_text())["upstream_stale"] > stale_ts
+
+
+def test_check_upstream_naive_state_timestamp_does_not_raise(
+    tmp_path: Path, sent_alerts: list[str]
+) -> None:
+    """A hand-edited state file with an offset-naive timestamp must not crash
+    the never-raises check, and the dedup window must still be honored."""
+    repo = tmp_path / "corpus"
+    _make_repo(repo, days_ago=30)
+    state = tmp_path / "alerts.json"
+    naive_ts = datetime.now(UTC).replace(tzinfo=None).isoformat()  # no offset
+    state.write_text(json.dumps({"upstream_stale": naive_ts}), encoding="utf-8")
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=False)
+    assert sent_alerts == []  # naive timestamp coerced to UTC: dedup still applies
 
 
 def test_check_upstream_failed_send_does_not_record_dedup(
@@ -188,17 +219,18 @@ def test_check_upstream_failed_send_does_not_record_dedup(
     _make_repo(repo, days_ago=30)
     state = tmp_path / "alerts.json"
     monkeypatch.setattr(alerts, "send_alert", lambda message, *, settings: False)
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=False)
     assert not state.exists()
 
 
 def test_check_upstream_not_a_repo_is_safe(tmp_path: Path, sent_alerts: list[str]) -> None:
     not_repo = tmp_path / "empty"
     not_repo.mkdir()
-    assert (
-        alerts.check_upstream_freshness(not_repo, settings=_settings(), state_path=tmp_path / "s")
-        is False
-    )
+    assert alerts.check_upstream_freshness(
+        not_repo, settings=_settings(), state_path=tmp_path / "s"
+    ) == alerts.UpstreamCheck(stale=False, alert_sent=False)
     assert sent_alerts == []
 
 
@@ -209,7 +241,9 @@ def test_check_upstream_corrupt_state_file_is_tolerated(
     _make_repo(repo, days_ago=30)
     state = tmp_path / "alerts.json"
     state.write_text("{not json", encoding="utf-8")
-    assert alerts.check_upstream_freshness(repo, settings=_settings(), state_path=state) is True
+    assert alerts.check_upstream_freshness(
+        repo, settings=_settings(), state_path=state
+    ) == alerts.UpstreamCheck(stale=True, alert_sent=True)
     assert len(sent_alerts) == 1
 
 
@@ -236,9 +270,9 @@ def cli_alerts(monkeypatch: pytest.MonkeyPatch) -> dict:
         recorded["sent"].append(message)
         return True
 
-    def fake_check(corpus_path, max_days=7, *, settings=None, state_path=None) -> bool:
+    def fake_check(corpus_path, max_days=7, *, settings=None, state_path=None):
         recorded["freshness_calls"].append((corpus_path, max_days))
-        return False
+        return alerts.UpstreamCheck(stale=False, alert_sent=False)
 
     monkeypatch.setattr(alerts, "send_alert", fake_send)
     monkeypatch.setattr(alerts, "check_upstream_freshness", fake_check)
@@ -348,9 +382,9 @@ def test_cli_check_upstream_stale_exits_one(
 ) -> None:
     calls: list[tuple] = []
 
-    def fake_check(corpus_path, max_days=7, *, settings=None, state_path=None) -> bool:
+    def fake_check(corpus_path, max_days=7, *, settings=None, state_path=None):
         calls.append((corpus_path, max_days))
-        return True
+        return alerts.UpstreamCheck(stale=True, alert_sent=True)
 
     monkeypatch.setattr(alerts, "check_upstream_freshness", fake_check)
     monkeypatch.setattr("sys.argv", ["legger", "ingest", "check-upstream"])
@@ -358,4 +392,23 @@ def test_cli_check_upstream_stale_exits_one(
         cli.main()
     assert exc_info.value.code == 1
     assert calls == [(Settings().corpus_path, 7)]
-    assert "Upstream stantio" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Upstream stantio" in out
+    assert "alert inviato" in out
+    assert "alert non inviato" not in out
+
+
+def test_cli_check_upstream_stale_without_alert_says_not_sent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    def fake_check(corpus_path, max_days=7, *, settings=None, state_path=None):
+        return alerts.UpstreamCheck(stale=True, alert_sent=False)
+
+    monkeypatch.setattr(alerts, "check_upstream_freshness", fake_check)
+    monkeypatch.setattr("sys.argv", ["legger", "ingest", "check-upstream"])
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "Upstream stantio" in out
+    assert "alert non inviato (config assente o dedup)" in out

@@ -40,10 +40,12 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 
@@ -119,9 +121,14 @@ def _last_alert_at(state: dict[str, str], key: str) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        # A hand-edited state file may carry a naive timestamp; assume UTC
+        # instead of letting `now - last_alert` raise (never-raises contract).
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def last_upstream_commit(corpus_path: Path) -> datetime | None:
@@ -144,31 +151,40 @@ def last_upstream_commit(corpus_path: Path) -> datetime | None:
         return None
 
 
+class UpstreamCheck(NamedTuple):
+    """Outcome of :func:`check_upstream_freshness`."""
+
+    stale: bool
+    alert_sent: bool
+
+
 def check_upstream_freshness(
     corpus_path: Path,
     max_days: int = 7,
     *,
     settings: Settings | None = None,
     state_path: Path | None = None,
-) -> bool:
+) -> UpstreamCheck:
     """Alert when the corpus upstream has had no commit for over ``max_days``.
 
-    Returns True when the upstream is STALE (the alert condition holds),
-    False when it is fresh or its age cannot be determined. The alert itself
-    is deduplicated to at most one per :data:`DEDUP_WINDOW` via the state
-    file (module docstring), so this is safe to run after every delta and
-    from a separate cron. Never raises.
+    Returns ``UpstreamCheck(stale, alert_sent)``: ``stale`` is True when the
+    upstream has had no commit for over ``max_days`` (False when it is fresh
+    or its age cannot be determined); ``alert_sent`` is True only when a
+    Telegram alert went out on this call. The alert is deduplicated to at
+    most one per :data:`DEDUP_WINDOW` via the state file (module docstring),
+    so this is safe to run after every delta and from a separate cron.
+    Never raises.
     """
     last_commit = last_upstream_commit(corpus_path)
     if last_commit is None:
-        return False
+        return UpstreamCheck(stale=False, alert_sent=False)
     now = datetime.now(UTC)
     age_days = (now - last_commit).total_seconds() / 86400
     if age_days <= max_days:
         logger.debug(
             "upstream fresco: ultimo commit %s (%.1f giorni)", last_commit.date(), age_days
         )
-        return False
+        return UpstreamCheck(stale=False, alert_sent=False)
 
     state_path = state_path or default_state_path()
     state = _load_state(state_path)
@@ -179,12 +195,15 @@ def check_upstream_freshness(
             age_days,
             last_alert.isoformat(),
         )
-        return True
+        return UpstreamCheck(stale=True, alert_sent=False)
     message = (
-        f"nessun commit upstream da {int(age_days)} giorni "
+        # ceil, not int(): 7.9 days must read "8 giorni" — never under-report
+        # how long the upstream has been silent.
+        f"nessun commit upstream da {math.ceil(age_days)} giorni "
         f"(ultimo: {last_commit.date().isoformat()} in {corpus_path})"
     )
-    if send_alert(message, settings=settings or Settings()):
+    sent = send_alert(message, settings=settings or Settings())
+    if sent:
         state["upstream_stale"] = now.isoformat()
         _save_state(state_path, state)
-    return True
+    return UpstreamCheck(stale=True, alert_sent=sent)

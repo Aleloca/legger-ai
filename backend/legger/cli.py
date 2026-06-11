@@ -318,13 +318,18 @@ def _run_ingest_check_upstream(args: argparse.Namespace) -> None:
     from legger.settings import Settings
 
     settings = Settings()
-    stale = alerts.check_upstream_freshness(
+    result = alerts.check_upstream_freshness(
         settings.corpus_path, max_days=args.max_days, settings=settings
     )
-    if stale:
+    if result.stale:
+        alert_note = (
+            "alert inviato, dedup 24h"
+            if result.alert_sent
+            else "alert non inviato (config assente o dedup)"
+        )
         print(
             f"Upstream stantio: nessun commit da oltre {args.max_days} giorni "
-            f"in {settings.corpus_path} (alert inviato, dedup 24h)."
+            f"in {settings.corpus_path} ({alert_note})."
         )
         raise SystemExit(1)
     print(f"Upstream OK: ultimo commit entro {args.max_days} giorni in {settings.corpus_path}.")
