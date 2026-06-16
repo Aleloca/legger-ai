@@ -69,6 +69,7 @@ async def test_rate_limiter_present_when_enabled(monkeypatch):
     import fakeredis
 
     import legger.api.ratelimit as rl_mod
+
     monkeypatch.setattr(
         rl_mod, "build_redis", lambda url: fakeredis.FakeStrictRedis(decode_responses=True)
     )
