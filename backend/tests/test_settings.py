@@ -53,3 +53,12 @@ def test_corpus_path_absolute_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
 
     assert settings.corpus_path == Path("/tmp/somewhere/corpus")
+
+
+def test_rate_limit_defaults():
+    s = Settings(_env_file=None)
+    assert s.rate_limit_enabled is False
+    assert s.redis_url == "redis://localhost:6379"
+    assert s.rate_limit_per_user_concurrent == 2
+    assert s.rate_limit_per_user_daily == 30
+    assert s.rate_limit_tz == "Europe/Rome"

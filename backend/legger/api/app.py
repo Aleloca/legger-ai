@@ -71,6 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Anthropic API and surface SSE error events.
             logger.warning("ANTHROPIC_API_KEY is empty; /chat will return error events")
         app.state.anthropic = Anthropic(api_key=settings.anthropic_api_key)
+        from legger.api.ratelimit import build_rate_limiter
+
+        app.state.rate_limiter = build_rate_limiter(settings)
         try:
             app.state.embedder = get_embedder(settings.embedder_name)
         except Exception:

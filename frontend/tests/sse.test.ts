@@ -222,6 +222,56 @@ describe("streamChat", () => {
     expect(calls.map((c) => c.name)).toEqual(["error"]);
   });
 
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  it("429 daily_limit → onError con il messaggio del limite giornaliero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(429, { code: "daily_limit", message: "ignored" }),
+      ),
+    );
+    const { calls, handlers } = recordingHandlers();
+    await streamChat(USER_TURN, handlers);
+    expect(calls.map((c) => c.name)).toEqual(["error"]);
+    expect(calls[0].payload).toEqual(
+      expect.stringContaining("limite di richieste giornaliere"),
+    );
+  });
+
+  it("429 concurrency_limit → onError con il messaggio di richiesta in corso", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(429, { code: "concurrency_limit", message: "ignored" }),
+      ),
+    );
+    const { calls, handlers } = recordingHandlers();
+    await streamChat(USER_TURN, handlers);
+    expect(calls.map((c) => c.name)).toEqual(["error"]);
+    expect(calls[0].payload).toEqual(
+      expect.stringContaining("richiesta in corso"),
+    );
+  });
+
+  it("429 con code sconosciuto → onError col fallback di rete", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(429, { code: "mai_visto" })),
+    );
+    const { calls, handlers } = recordingHandlers();
+    await streamChat(USER_TURN, handlers);
+    expect(calls.map((c) => c.name)).toEqual(["error"]);
+    expect(calls[0].payload).toEqual(
+      expect.stringContaining("Impossibile contattare il servizio"),
+    );
+  });
+
   it("flusso chiuso senza done né error → onError", async () => {
     mockFetch(['event: token\ndata: {"text": "a metà"}\n\n']);
     const { calls, handlers } = recordingHandlers();
