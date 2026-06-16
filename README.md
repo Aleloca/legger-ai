@@ -129,12 +129,14 @@ npm run dev                               # http://localhost:3000
 
 ## The corpus
 
-legger.ai is designed to run against `italia-corpus`, a separate repository of
-the Italian normative texts as Markdown, organised into collections (Codici,
-DL e leggi di conversione, Decreti Legislativi, DPR, Regi decreti, EU
-transposition acts, and others). The corpus is **not** bundled here; point
-`CORPUS_PATH` in your `.env` at a local clone (default: `../italia-corpus`).
-See [`docs/corpus-analysis.md`](docs/corpus-analysis.md) for a breakdown.
+legger.ai is designed to run against
+[`italia-corpus`](https://github.com/ahmeabd/italia-corpus), a separate
+repository of the Italian normative texts as Markdown, organised into
+collections (Codici, DL e leggi di conversione, Decreti Legislativi, DPR, Regi
+decreti, EU transposition acts, and others). The corpus is **not** bundled
+here; point `CORPUS_PATH` in your `.env` at a local clone (default:
+`../italia-corpus`). See [`docs/corpus-analysis.md`](docs/corpus-analysis.md)
+for a breakdown.
 
 ## Deployment
 
@@ -149,6 +151,15 @@ full, step-by-step production runbook lives in
 cd backend  && uv run pytest        # backend tests
 cd frontend && npm test             # frontend tests (vitest)
 ```
+
+## Acknowledgements
+
+This project would not exist without the
+[**italia-corpus**](https://github.com/ahmeabd/italia-corpus) repository, which
+provides the structured collection of Italian normative texts that legger.ai
+indexes and reasons over. Heartfelt thanks to its maintainer,
+[**@ahmeabd**](https://github.com/ahmeabd), for assembling and sharing this
+material — it is the foundation the entire project is built upon.
 
 ## License
 
