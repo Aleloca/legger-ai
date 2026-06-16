@@ -107,19 +107,57 @@ docker compose up -d        # Qdrant on :6333, Postgres on :5432
 cd backend
 uv sync                                   # install dependencies
 uv run alembic upgrade head               # apply DB migrations
-uv run uvicorn legger.api.app:app --reload --port 8000
 ```
 
-The `legger` CLI handles indexing, evaluation, ingestion, and a terminal chat:
+### 4. Build the vector index
+
+This is the step that produces the searchable knowledge base: it walks the
+corpus, parses and chunks each act, embeds the chunks, and upserts them
+(dense **and** BM25 sparse vectors) into a single Qdrant collection. Postgres
+tracks per-file checkpoints, so the run is fully **resumable** — re-run the
+same command after a crash or interruption and it picks up where it left off.
 
 ```sh
-uv run legger index --collection "Codici" --embedder voyage-4-large
-uv run legger eval  --collection norme --embedder voyage-4-large --rerank
-uv run legger chat                        # interactive grounded chat
-uv run legger --help                      # full command reference
+# Estimate scale/cost first — no API key, no Qdrant, no DB writes:
+uv run legger ingest bootstrap --dry-run
+
+# Build the whole index (creates the Qdrant collection if missing):
+uv run legger ingest bootstrap --embedder voyage-4-large --qdrant-collection norme
+
+# ...or index a subset of collections to try things out quickly:
+uv run legger ingest bootstrap --collections "Codici,DPR" --qdrant-collection norme
 ```
 
-### 4. Frontend
+> **Scale & cost.** The full corpus is large (hundreds of thousands of acts),
+> so a complete bootstrap with `voyage-4-large` takes time and incurs **Voyage
+> API usage costs**. Run `--dry-run` first to see the token estimate. For a
+> fully local, no-API-key alternative, use `--embedder bge-m3` (a smaller,
+> CPU/GPU-local dense model); the BM25 sparse side is always computed locally.
+
+> **Embedder ↔ collection pairing.** The query-time embedder **must** match the
+> one used to build the collection (same model ⇒ same vector space). When you
+> serve the API, set `QDRANT_COLLECTION` and `EMBEDDER_NAME` in `.env` to the
+> pair you indexed with (e.g. `QDRANT_COLLECTION=norme`,
+> `EMBEDDER_NAME=voyage-4-large`).
+
+Keeping the index up to date with the upstream corpus (git pull + diff, only
+re-embedding what changed):
+
+```sh
+uv run legger ingest delta --embedder voyage-4-large --qdrant-collection norme
+```
+
+### 5. Run the backend and the CLI
+
+```sh
+uv run uvicorn legger.api.app:app --reload --port 8000   # API on :8000
+
+uv run legger eval --collection norme --embedder voyage-4-large --rerank  # retrieval eval
+uv run legger chat --collection norme --embedder voyage-4-large           # terminal chat
+uv run legger --help                                                      # full reference
+```
+
+### 6. Frontend
 
 ```sh
 cd frontend
