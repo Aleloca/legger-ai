@@ -464,6 +464,49 @@ def test_chat_models_catalog_shape(client: TestClient) -> None:
     assert haiku["supports_effort"] is False
 
 
+# --- rate limiting --------------------------------------------------------------
+
+
+def _enable_limiter(client: TestClient, concurrent: int = 2, daily: int = 2) -> None:
+    """Attach a fakeredis-backed RateLimiter to the running app's state."""
+    import fakeredis
+
+    from legger.api.ratelimit import RateLimiter
+
+    client.app.state.rate_limiter = RateLimiter(
+        fakeredis.FakeStrictRedis(decode_responses=True),
+        concurrent=concurrent,
+        daily=daily,
+        tz="Europe/Rome",
+    )
+
+
+def test_chat_sets_lid_cookie(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_calls(monkeypatch)
+    _enable_limiter(client)
+    r = client.post("/chat", json={"messages": [{"role": "user", "content": "ciao"}]})
+    assert r.status_code == 200
+    assert "lid" in r.cookies
+
+
+def test_chat_daily_limit_returns_429(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_calls(monkeypatch)
+    _enable_limiter(client, daily=1)
+    ok = client.post("/chat", json={"messages": [{"role": "user", "content": "a"}]})
+    assert ok.status_code == 200
+    blocked = client.post("/chat", json={"messages": [{"role": "user", "content": "b"}]})
+    assert blocked.status_code == 429
+    assert blocked.json()["code"] == "daily_limit"
+    assert "Retry-After" in blocked.headers
+
+
+def test_chat_disabled_limiter_is_noop(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_calls(monkeypatch)
+    client.app.state.rate_limiter = None
+    r = client.post("/chat", json={"messages": [{"role": "user", "content": "ok"}]})
+    assert r.status_code == 200
+
+
 # --- generator teardown --------------------------------------------------------
 
 

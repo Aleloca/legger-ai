@@ -97,11 +97,12 @@ import json
 import logging
 from typing import TYPE_CHECKING, Literal
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from legger.api.acts import anchor_from_chunk_segment
+from legger.api.ratelimit import COOKIE_NAME, RateLimitError, client_ip, ensure_lid
 from legger.chat.generate import MODEL_SONNET, stream_answer
 from legger.chat.guardrail import check_citation
 from legger.chat.models_catalog import (
@@ -349,16 +350,53 @@ def chat_models() -> dict:
     return catalog_payload()
 
 
+def _cookie_kwargs(request: Request) -> dict:
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    return dict(httponly=True, samesite="lax", secure=secure, max_age=60 * 60 * 24 * 365)
+
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    # Tell nginx-style proxies not to buffer the stream.
+    "X-Accel-Buffering": "no",
+}
+
+
 @router.post("/chat")
-def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
-    """Stream the grounded answer for a conversation as SSE."""
+def chat(payload: ChatRequest, request: Request) -> Response:
+    """Stream the grounded answer for a conversation as SSE (rate-limited)."""
     messages: list[Message] = [{"role": m.role, "content": m.content} for m in payload.messages]
-    return StreamingResponse(
-        _event_stream(messages, request.app, payload.config),
+    limiter = getattr(request.app.state, "rate_limiter", None)
+
+    if limiter is None:
+        return StreamingResponse(
+            _event_stream(messages, request.app, payload.config),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
+    lid, lid_is_new = ensure_lid(request)
+    ip = client_ip(request)
+    try:
+        lease = limiter.acquire(ip, lid)
+    except RateLimitError as exc:
+        resp = JSONResponse(status_code=429, content={"code": exc.code, "message": exc.message})
+        resp.headers["Retry-After"] = str(exc.retry_after)
+        if lid_is_new:
+            resp.set_cookie(COOKIE_NAME, lid, **_cookie_kwargs(request))
+        return resp
+
+    def _streamer() -> Iterator[str]:
+        try:
+            yield from _event_stream(messages, request.app, payload.config)
+        finally:
+            limiter.release(lease)
+
+    resp = StreamingResponse(
+        _streamer(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            # Tell nginx-style proxies not to buffer the stream.
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
+    if lid_is_new:
+        resp.set_cookie(COOKIE_NAME, lid, **_cookie_kwargs(request))
+    return resp
