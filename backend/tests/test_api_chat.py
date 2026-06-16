@@ -507,6 +507,56 @@ def test_chat_disabled_limiter_is_noop(client: TestClient, monkeypatch: pytest.M
     assert r.status_code == 200
 
 
+def test_lid_cookie_attributes_and_returning_caller(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First call sets a hardened lid cookie; a returning caller gets no new one."""
+    stub_calls(monkeypatch)
+    _enable_limiter(client, daily=5)
+
+    # First request: a fresh caller -> the lid cookie is set, with hardened attrs.
+    first = client.post("/chat", json={"messages": [{"role": "user", "content": "a"}]})
+    assert first.status_code == 200
+    set_cookie = first.headers["set-cookie"]
+    assert "lid" in set_cookie
+    assert "HttpOnly" in set_cookie
+    # Starlette renders the samesite value verbatim (lowercase "lax").
+    assert "SameSite=lax" in set_cookie
+    # Plain-HTTP TestClient request -> Secure must NOT be present.
+    assert "Secure" not in set_cookie
+
+    # Second request reuses the client, so the browser sends the lid cookie back:
+    # a returning caller keeps its identity (lid_is_new is False) -> no new cookie.
+    second = client.post("/chat", json={"messages": [{"role": "user", "content": "b"}]})
+    assert second.status_code == 200
+    assert "set-cookie" not in second.headers
+
+
+def test_concurrency_slot_released_after_stream(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drained stream's finally releases the concurrency slot for the next call."""
+    stub_calls(monkeypatch)
+    _enable_limiter(client, concurrent=1, daily=5)
+
+    # TestClient drains the stream, so the generator's finally (limiter.release)
+    # runs before the response is fully read.
+    first = client.post("/chat", json={"messages": [{"role": "user", "content": "a"}]})
+    assert first.status_code == 200
+
+    # If the slot had leaked, this would 429 with concurrency_limit (concurrent=1).
+    second = client.post("/chat", json={"messages": [{"role": "user", "content": "b"}]})
+    assert second.status_code == 200
+
+    # Belt-and-suspenders: the concurrency keys are back to free.
+    redis = client.app.state.rate_limiter.redis
+    lid = first.cookies["lid"]
+    conc_cookie = redis.get(f"conc:cookie:{lid}")
+    conc_ip = redis.get("conc:ip:testclient")
+    assert conc_cookie in (None, "0")
+    assert conc_ip in (None, "0")
+
+
 # --- generator teardown --------------------------------------------------------
 
 

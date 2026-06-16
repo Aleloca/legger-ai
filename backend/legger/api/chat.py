@@ -355,6 +355,11 @@ def _cookie_kwargs(request: Request) -> dict:
     return dict(httponly=True, samesite="lax", secure=secure, max_age=60 * 60 * 24 * 365)
 
 
+def _set_lid_cookie(resp, request, lid: str, lid_is_new: bool) -> None:
+    if lid_is_new:
+        resp.set_cookie(COOKIE_NAME, lid, **_cookie_kwargs(request))
+
+
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
     # Tell nginx-style proxies not to buffer the stream.
@@ -382,8 +387,7 @@ def chat(payload: ChatRequest, request: Request) -> Response:
     except RateLimitError as exc:
         resp = JSONResponse(status_code=429, content={"code": exc.code, "message": exc.message})
         resp.headers["Retry-After"] = str(exc.retry_after)
-        if lid_is_new:
-            resp.set_cookie(COOKIE_NAME, lid, **_cookie_kwargs(request))
+        _set_lid_cookie(resp, request, lid, lid_is_new)
         return resp
 
     def _streamer() -> Iterator[str]:
@@ -397,6 +401,5 @@ def chat(payload: ChatRequest, request: Request) -> Response:
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
-    if lid_is_new:
-        resp.set_cookie(COOKIE_NAME, lid, **_cookie_kwargs(request))
+    _set_lid_cookie(resp, request, lid, lid_is_new)
     return resp
