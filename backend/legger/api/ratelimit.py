@@ -21,6 +21,8 @@ COOKIE_NAME = "lid"
 #: Safety TTL on concurrency keys: reclaim a slot if a worker dies before its
 #: finally runs. Generous vs the longest plausible /chat stream.
 CONC_TTL_S = 300
+#: Retry-After (seconds) hint for transient refusals (concurrency / unavailable).
+RETRY_AFTER_SHORT_S = 5
 
 
 def client_ip(request) -> str:
@@ -76,6 +78,8 @@ class Lease:
 
 
 class RateLimiter:
+    """Per-user (IP + cookie) daily + concurrency limiter backed by Redis."""
+
     def __init__(self, redis_client, *, concurrent: int, daily: int, tz: str):
         self.redis = redis_client
         self.concurrent = concurrent
@@ -117,7 +121,7 @@ class RateLimiter:
                         self.redis.decr(k)
                     raise RateLimitError(
                         "concurrency_limit",
-                        5,
+                        RETRY_AFTER_SHORT_S,
                         _MESSAGES["concurrency_limit"],
                     )
             # 3. daily increment (admission); set TTL when first created.
@@ -129,10 +133,14 @@ class RateLimiter:
             raise
         except redis_lib.RedisError as exc:
             logger.error("rate limiter Redis error, failing closed: %s", exc)
-            raise RateLimitError("unavailable", 5, _MESSAGES["unavailable"]) from exc
+            raise RateLimitError(
+                "unavailable", RETRY_AFTER_SHORT_S, _MESSAGES["unavailable"]
+            ) from exc
         except Exception as exc:  # the Boom() test path + any client lib quirk
             logger.error("rate limiter error, failing closed: %s", exc)
-            raise RateLimitError("unavailable", 5, _MESSAGES["unavailable"]) from exc
+            raise RateLimitError(
+                "unavailable", RETRY_AFTER_SHORT_S, _MESSAGES["unavailable"]
+            ) from exc
         return Lease(conc_keys=conc_keys)
 
     def release(self, lease: Lease) -> None:

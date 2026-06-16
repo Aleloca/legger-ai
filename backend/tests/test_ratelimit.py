@@ -96,6 +96,23 @@ def test_daily_limit_triggers_on_either_identity():
     assert ei.value.code == "daily_limit"
 
 
+def test_daily_keys_get_ttl_on_first_creation():
+    rl = _limiter(concurrent=5, daily=3)
+    rl.release(rl.acquire("1.1.1.1", "lidA"))  # first admission sets TTLs
+    day = rl._today()
+    assert rl.redis.ttl("daily:cookie:lidA:" + day) > 0
+    assert rl.redis.ttl("daily:ip:1.1.1.1:" + day) > 0
+
+
+def test_blocked_concurrency_leaves_no_residue():
+    rl = _limiter(concurrent=1)
+    rl.acquire("1.1.1.1", "lidA")  # lease held, conc 1/1
+    with pytest.raises(RateLimitError) as ei:
+        rl.acquire("1.1.1.1", "lidA")  # over -> blocked, INCR rolled back
+    assert ei.value.code == "concurrency_limit"
+    assert rl.redis.get("conc:cookie:lidA") == "1"  # only the held slot remains
+
+
 def test_redis_down_fails_closed():
     class Boom:
         def __getattr__(self, _):
