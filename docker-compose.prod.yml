@@ -105,6 +105,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       RATE_LIMIT_PER_USER_CONCURRENT: ${RATE_LIMIT_PER_USER_CONCURRENT:-2}
       RATE_LIMIT_PER_USER_DAILY: ${RATE_LIMIT_PER_USER_DAILY:-30}
+      RATE_LIMIT_TZ: ${RATE_LIMIT_TZ:-Europe/Rome}
     volumes:
       - corpus:/corpus:ro # read-only: only `ingest` writes (git pull)
     depends_on:
