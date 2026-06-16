@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     #: comma-separated string (not list[str]) because pydantic-settings
     #: would parse a list field as JSON from the env var.
     cors_origins: str = "http://localhost:3000"
+    #: Rate limiting on POST /chat (per-user, IP + cookie). Off by default so
+    #: local dev is never throttled; prod sets RATE_LIMIT_ENABLED=true. See
+    #: docs/plans/2026-06-16-rate-limiting-design.md and legger/api/ratelimit.py.
+    rate_limit_enabled: bool = False
+    redis_url: str = "redis://localhost:6379"
+    #: Max simultaneous /chat streams per IP and per cookie.
+    rate_limit_per_user_concurrent: int = 2
+    #: Max /chat requests per calendar day, per IP and per cookie.
+    rate_limit_per_user_daily: int = 30
+    #: Timezone of the daily window (IANA name); the counter resets at its midnight.
+    rate_limit_tz: str = "Europe/Rome"
 
     def cors_origin_list(self) -> list[str]:
         """The ``cors_origins`` string split into clean origin entries."""
