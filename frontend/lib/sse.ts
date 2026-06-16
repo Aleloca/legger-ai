@@ -43,6 +43,20 @@ const NETWORK_ERROR_MESSAGE =
   "Impossibile contattare il servizio. Verifica la connessione e riprova.";
 
 /**
+ * Copy UI dei rate-limit, indicizzata per `code` del backend (HTTP 429).
+ * Il `message` del server è ignorato: queste stringhe sono l'unica fonte
+ * di verità lato UI. Codici sconosciuti → NETWORK_ERROR_MESSAGE.
+ */
+const RATE_LIMIT_MESSAGES: Record<string, string> = {
+  daily_limit:
+    "Hai raggiunto il limite di richieste giornaliere per questa demo. Riprova domani.",
+  concurrency_limit:
+    "Hai già una richiesta in corso. Attendi che finisca prima di inviarne un'altra.",
+  unavailable:
+    "Servizio temporaneamente non disponibile. Riprova tra qualche istante.",
+};
+
+/**
  * Guardie minime sulla shape del payload, per evento: un frame con JSON
  * valido ma payload fuori contratto viene scartato come quelli malformati,
  * così le callback ricevono solo dati tipizzati davvero.
@@ -140,6 +154,15 @@ export async function streamChat(
   } catch (err) {
     if (isAbort(err)) return;
     handlers.onError?.(NETWORK_ERROR_MESSAGE);
+    return;
+  }
+
+  if (response.status === 429) {
+    const body = await response.json().catch(() => null);
+    const message =
+      RATE_LIMIT_MESSAGES[(body as { code?: string } | null)?.code as string] ??
+      NETWORK_ERROR_MESSAGE;
+    handlers.onError?.(message);
     return;
   }
 
