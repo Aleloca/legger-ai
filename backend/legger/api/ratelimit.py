@@ -149,3 +149,18 @@ class RateLimiter:
                 self.redis.decr(key)
             except Exception:  # release must never raise into the stream
                 logger.warning("rate limiter could not release %s", key, exc_info=True)
+
+
+def build_redis(url: str):
+    return redis_lib.from_url(url, decode_responses=True)
+
+
+def build_rate_limiter(settings) -> "RateLimiter | None":
+    if not settings.rate_limit_enabled:
+        return None
+    return RateLimiter(
+        build_redis(settings.redis_url),
+        concurrent=settings.rate_limit_per_user_concurrent,
+        daily=settings.rate_limit_per_user_daily,
+        tz=settings.rate_limit_tz,
+    )

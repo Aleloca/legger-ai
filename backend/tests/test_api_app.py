@@ -57,3 +57,21 @@ def test_cors_origin_list_parses_comma_separated() -> None:
     settings = Settings(cors_origins=" https://a.example ,, https://b.example ")
 
     assert settings.cors_origin_list() == ["https://a.example", "https://b.example"]
+
+
+async def test_rate_limiter_absent_when_disabled():
+    app = create_app(Settings(_env_file=None, rate_limit_enabled=False))
+    async with app.router.lifespan_context(app):
+        assert app.state.rate_limiter is None
+
+
+async def test_rate_limiter_present_when_enabled(monkeypatch):
+    import fakeredis
+
+    import legger.api.ratelimit as rl_mod
+    monkeypatch.setattr(
+        rl_mod, "build_redis", lambda url: fakeredis.FakeStrictRedis(decode_responses=True)
+    )
+    app = create_app(Settings(_env_file=None, rate_limit_enabled=True))
+    async with app.router.lifespan_context(app):
+        assert app.state.rate_limiter is not None
