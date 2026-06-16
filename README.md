@@ -147,6 +147,36 @@ re-embedding what changed):
 uv run legger ingest delta --embedder voyage-4-large --qdrant-collection norme
 ```
 
+#### Snapshot: back up and reuse the built index
+
+Once the collection is built you can export it as a **Qdrant snapshot** — a
+single portable file — so you can back it up or restore it on another machine
+**without re-running the bootstrap** (and without paying for embeddings again).
+The snapshot contains the dense + BM25 vectors *and* the payload (chunk text),
+so treat it like the corpus content when deciding whether to share it.
+
+```sh
+# 1. Create a snapshot of the `norme` collection (Qdrant on :6333):
+curl -X POST "http://localhost:6333/collections/norme/snapshots?wait=true"
+
+# 2. Copy it out of the Qdrant container (container name from `docker compose ps`):
+docker cp <qdrant-container>:/qdrant/snapshots/norme/<SNAPSHOT>.snapshot ./norme.snapshot
+shasum -a 256 ./norme.snapshot          # note the hash to verify after transfer
+
+# 3. On the target machine, copy the file into its Qdrant container and recover:
+docker cp ./norme.snapshot <qdrant-container>:/qdrant/snapshots/
+curl -X PUT "http://localhost:6333/collections/norme/snapshots/recover?wait=true" \
+  -H "Content-Type: application/json" \
+  -d '{"location": "file:///qdrant/snapshots/norme.snapshot"}'
+
+# 4. Verify: points_count should match and status should be green:
+curl "http://localhost:6333/collections/norme"
+```
+
+> The snapshot for the full corpus is several GB. After recovery, set
+> `QDRANT_COLLECTION`/`EMBEDDER_NAME` to the same pair the snapshot was built
+> with, exactly as you would after a fresh bootstrap.
+
 ### 5. Run the backend and the CLI
 
 ```sh
