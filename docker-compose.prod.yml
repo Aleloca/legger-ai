@@ -99,7 +99,12 @@ services:
     build: ./backend
     image: legger-api
     restart: unless-stopped
-    environment: *api-environment
+    environment:
+      <<: *api-environment
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      RATE_LIMIT_PER_USER_CONCURRENT: ${RATE_LIMIT_PER_USER_CONCURRENT:-2}
+      RATE_LIMIT_PER_USER_DAILY: ${RATE_LIMIT_PER_USER_DAILY:-30}
     volumes:
       - corpus:/corpus:ro # read-only: only `ingest` writes (git pull)
     depends_on:
@@ -107,6 +112,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      redis:
+        condition: service_started
 
   # One-shot: alembic migrations. Run at every deploy, BEFORE `up`:
   #   docker compose -f docker-compose.prod.yml run --rm migrate
@@ -174,6 +181,11 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
 
 volumes:
   caddy_data:
