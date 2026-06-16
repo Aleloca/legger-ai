@@ -152,6 +152,4 @@ cd frontend && npm test             # frontend tests (vitest)
 
 ## License
 
-_No license has been chosen yet._ Until a `LICENSE` file is added, all rights
-are reserved by default. Add an OSI-approved license before relying on this as
-open source.
+Released under the [MIT License](LICENSE). © 2026 Alessandro Locatelli.
