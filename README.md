@@ -209,9 +209,45 @@ for a breakdown.
 ## Deployment
 
 A production stack (`docker-compose.prod.yml`) runs the backend, frontend,
-Qdrant, Postgres, and a Caddy reverse proxy (automatic HTTPS, HTTP/3). The
-full, step-by-step production runbook lives in
+Qdrant, Postgres, Redis (rate-limit counters), and a Caddy reverse proxy
+(automatic HTTPS, HTTP/3). The full, step-by-step production runbook lives in
 [`docs/deploy.md`](docs/deploy.md).
+
+## Demo & rate limiting
+
+`POST /chat` is the only endpoint that calls a paid LLM, so a public demo can
+run up real cost. The backend ships an optional **per-user rate limiter**
+(Redis-backed) to bound it. It is **off by default** — local development is
+never throttled — and enabled in production via env.
+
+Two independent limits, each enforced **per user** where a "user" is the pair
+*(client IP, anonymous `lid` cookie)* — the stricter of the two identities
+wins, so clearing cookies (IP still counts) or sharing a NAT (cookie still
+counts) does not bypass it:
+
+- **Concurrency** — at most `RATE_LIMIT_PER_USER_CONCURRENT` simultaneous
+  `/chat` streams per user (blocks double-clicks / many open tabs).
+- **Daily** — at most `RATE_LIMIT_PER_USER_DAILY` requests per calendar day
+  (in `RATE_LIMIT_TZ`), reset at midnight.
+
+When a limit is hit the request is refused **before** any tokens are spent,
+with HTTP `429`, a `Retry-After` header, and a JSON body `{"code", "message"}`
+(`code` is `daily_limit` | `concurrency_limit` | `unavailable`); the frontend
+shows a localized message. If Redis is unreachable the limiter **fails closed**
+(`429`) rather than letting unbounded traffic through.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `RATE_LIMIT_ENABLED` | `false` | Master switch (set `true` in prod) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection (prod: `redis://redis:6379`) |
+| `RATE_LIMIT_PER_USER_CONCURRENT` | `2` | Max simultaneous `/chat` streams per user |
+| `RATE_LIMIT_PER_USER_DAILY` | `30` | Max `/chat` requests per user per day |
+| `RATE_LIMIT_TZ` | `Europe/Rome` | Timezone of the daily reset |
+
+> Note: the limiter is per-user only — there is no global daily ceiling, so the
+> theoretical maximum daily spend scales with the number of distinct users. See
+> [`docs/plans/2026-06-16-rate-limiting-design.md`](docs/plans/2026-06-16-rate-limiting-design.md)
+> for the full design and rationale.
 
 ## Testing
 
