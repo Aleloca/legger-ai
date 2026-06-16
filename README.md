@@ -2,6 +2,8 @@
 
 **RAG assistant over Italian legislation: semantic search and cited answers across the legal corpus, with a FastAPI/Qdrant backend and a Next.js frontend.**
 
+**🔗 Live demo: [http://178.105.229.42](http://178.105.229.42)** — rate-limited per user (see [Demo & rate limiting](#demo--rate-limiting)).
+
 legger.ai indexes the Italian normative corpus (codes, laws, legislative and
 presidential decrees, EU transposition acts, and more) into a hybrid search
 index and answers natural-language questions with grounded, source-cited
@@ -214,6 +216,8 @@ Qdrant, Postgres, Redis (rate-limit counters), and a Caddy reverse proxy
 [`docs/deploy.md`](docs/deploy.md).
 
 ## Demo & rate limiting
+
+A live demo is hosted at **[http://178.105.229.42](http://178.105.229.42)**.
 
 `POST /chat` is the only endpoint that calls a paid LLM, so a public demo can
 run up real cost. The backend ships an optional **per-user rate limiter**
