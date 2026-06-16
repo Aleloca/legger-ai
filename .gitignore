@@ -61,3 +61,6 @@ Thumbs.db
 *.mov
 *.wmv
 
+
+# git worktrees (isolated workspaces)
+.worktrees/
